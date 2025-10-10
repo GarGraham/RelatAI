@@ -1,5 +1,5 @@
 Reference Documentation:
-Always review Reference-Guide.md before executing actions to understand the codebase better.
+Always review Reference-Guide.md before executing actions to understand the codebase better. Always review UserRequirements.md and TechnicalSpecificaiton.md to understand the desired architecture as well. 
 
 Bug Identification:
 In the case of code review / exploration bugs shall always be documented in this way:
@@ -22,4 +22,4 @@ Commit Guidelines:
 Prefix commits with type: feat:, fix:, docs:
 Documentation Guidelines (Reference-Guide.md):
 Any new files created need to be documented in Reference-Guide.md; this file shall include a high level summary of the intended purpose of the file and key features.
-Any updates to files require a review of Reference-Guide.md to ensure that if the intended use has changed that the summary and key features are updated.
+Any updates to files require a review of Reference-Guide.md to ensure that if the intended use has changed that the summary and key features are updated. If underlying changes to the app's intended use have occurred TechnicalSpecification.md and UserRequirements.md should be updated accordingly.
