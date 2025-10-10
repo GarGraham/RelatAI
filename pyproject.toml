@@ -1,0 +1,39 @@
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "B", "C4", "UP", "N", "S", "BLE", "RUF"]
+ignore = ["E203", "S101"]
+exclude = [
+  "backend/relat_ai/tests",
+]
+src = ["backend/relat_ai"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra"
+testpaths = [
+  "backend/relat_ai/tests",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["backend/relat_ai"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = true
+show_error_codes = true
+namespace_packages = true
+strict = true
+packages = ["relat_ai"]
+mypy_path = ["backend"]
