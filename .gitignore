@@ -9,6 +9,8 @@ __pycache__/
 venv/
 .env
 .env.*
+!.env.example
+!backend/.env.example
 .idea/
 .vscode/
 .mypy_cache/
@@ -30,6 +32,7 @@ frontend/webapp/build/
 
 # Data artifacts
 datasets/uploads/
+datasets/registry.json
 *.parquet
 *.csv
 *.xlsx

@@ -1,12 +1,15 @@
 """Dataset upload and profiling API routes."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from relat_ai.core.models import DatasetUploadResponse
 from relat_ai.services.ingestion import get_dataset, save_upload
 
-
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+DatasetUpload = Annotated[UploadFile, File(...)]
 
 
 @router.post(
@@ -15,7 +18,7 @@ router = APIRouter(prefix="/datasets", tags=["datasets"])
     status_code=status.HTTP_201_CREATED,
     response_model=DatasetUploadResponse,
 )
-async def upload_dataset(file: UploadFile = File(...)) -> DatasetUploadResponse:
+async def upload_dataset(file: DatasetUpload) -> DatasetUploadResponse:
     """Persist an uploaded dataset and return the schema profile."""
 
     try:

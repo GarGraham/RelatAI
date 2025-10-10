@@ -4,12 +4,14 @@ target-version = ["py311"]
 
 [tool.ruff]
 line-length = 100
-select = ["E", "F", "I", "B", "C4", "UP", "N", "S", "BLE", "RUF"]
-ignore = ["E203", "S101"]
+src = ["backend/relat_ai"]
 exclude = [
   "backend/relat_ai/tests",
 ]
-src = ["backend/relat_ai"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "UP", "N", "S", "BLE", "RUF"]
+ignore = ["E203", "S101"]
 
 [tool.ruff.format]
 quote-style = "double"
