@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import logging
+
 from dataclasses import dataclass
 from typing import Iterable
 
 import pandas as pd
 import statsmodels.api as sm
+from numpy.linalg import LinAlgError
+from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
 from relat_ai.services.analysis.utils import AnalysisResult, ModelSummary
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -28,7 +35,17 @@ def build_multivariate_models(
 
     summaries: list[ModelSummary] = []
     for config in configs:
-        design = frame[[config.response] + config.predictors].dropna()
+        required_columns = [config.response, *config.predictors]
+        missing_columns = [column for column in required_columns if column not in frame.columns]
+        if missing_columns:
+            LOGGER.warning(
+                "Skipping regression for response '%s' due to missing columns: %s",
+                config.response,
+                ", ".join(missing_columns),
+            )
+            continue
+
+        design = frame.loc[:, required_columns].dropna()
         if design.empty:
             continue
 
@@ -37,7 +54,16 @@ def build_multivariate_models(
         if config.add_intercept:
             x = sm.add_constant(x, prepend=True, has_constant="add")
 
-        model = sm.OLS(y, x).fit()
+        try:
+            model = sm.OLS(y, x).fit()
+        except (ValueError, LinAlgError, PerfectSeparationError) as exc:
+            LOGGER.warning(
+                "Skipping regression for response '%s' due to model fitting error: %s",
+                config.response,
+                exc,
+            )
+            continue
+
         summaries.append(
             ModelSummary(
                 response=config.response,

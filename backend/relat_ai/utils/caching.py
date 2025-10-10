@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from functools import wraps
 from typing import Any, Generic, TypeVar
 
 T = TypeVar("T")
@@ -45,6 +46,7 @@ def cached(cache: CacheBackend[T], key_builder: Callable[..., str]) -> Callable[
     """Decorator applying caching semantics to a function."""
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             key = key_builder(*args, **kwargs)
             cached_value = cache.get(key)

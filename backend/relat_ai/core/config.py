@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     profile_sample_size: int = Field(default=5000, alias="PROFILE_SAMPLE_SIZE")
     temp_storage_path: Path = Field(default=Path("datasets/uploads"), alias="TEMP_STORAGE_PATH")
     cache_backend: str = Field(default="memory", alias="CACHE_BACKEND")
+    dataset_registry_max_items: int | None = Field(
+        default=100, alias="DATASET_REGISTRY_MAX_ITEMS"
+    )
+    dataset_registry_state_path: Path = Field(
+        default=Path("datasets/registry.json"), alias="DATASET_REGISTRY_STATE_PATH"
+    )
 
     @property
     def max_upload_size_bytes(self) -> int:

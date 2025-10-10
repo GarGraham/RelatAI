@@ -16,7 +16,7 @@ class DatasetMetadata(BaseModel):
 
     dataset_id: str = Field(default_factory=lambda: uuid4().hex)
     name: str
-    path: Path
+    path: Path = Field(exclude=True)
     original_filename: str | None = None
     content_type: str | None = None
     file_size_bytes: int | None = None

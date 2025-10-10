@@ -28,6 +28,8 @@ def settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Settings:
         temp_storage_path=uploads_dir,
         max_upload_size_mb=1,
         profile_sample_size=100,
+        dataset_registry_state_path=uploads_dir / "registry.json",
+        dataset_registry_max_items=10,
     )
 
     monkeypatch.setattr("relat_ai.core.config.get_settings", lambda: config)
