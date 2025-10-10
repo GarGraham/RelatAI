@@ -22,13 +22,14 @@
 - `backend/relat_ai/api/__init__.py`: Exposes the FastAPI application factory.
 - `backend/relat_ai/api/main.py`: Creates the FastAPI app, registers routes, and exposes configuration metadata endpoint.
 - `backend/relat_ai/api/routes/__init__.py`: Registers public API route modules.
+- `backend/relat_ai/api/routes/datasets.py`: Dataset upload and retrieval endpoints returning profiling metadata.
 - `backend/relat_ai/api/routes/health.py`: Health check endpoint used for uptime monitoring.
 - `backend/relat_ai/core/__init__.py`: Re-exports configuration primitives.
-- `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration.
-- `backend/relat_ai/core/models.py`: Shared domain models for dataset metadata and analysis requests.
+- `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration (upload size, profiling sample size, storage paths).
+- `backend/relat_ai/core/models.py`: Shared domain models for dataset metadata, profiling payloads, and analysis requests.
 - `backend/relat_ai/services/__init__.py`: Aggregates service layer modules.
-- `backend/relat_ai/services/ingestion.py`: File upload persistence helpers and dataframe loaders.
-- `backend/relat_ai/services/schema_detection.py`: Dataset and column profiling utilities.
+- `backend/relat_ai/services/ingestion.py`: Streaming upload persistence, dataset registry management, and dataframe loaders.
+- `backend/relat_ai/services/schema_detection.py`: Dataset and column profiling utilities with logical type inference and statistics extraction.
 - `backend/relat_ai/services/analysis/__init__.py`: Public interface for statistical pipelines.
 - `backend/relat_ai/services/analysis/pairwise.py`: Pairwise correlation computations (Pearson, Spearman, Kendall).
 - `backend/relat_ai/services/analysis/multivariate.py`: Regression-based multivariate modeling helpers.
@@ -42,6 +43,9 @@
 - `backend/relat_ai/tests/conftest.py`: Shared pytest fixtures including FastAPI test client setup.
 - `backend/relat_ai/tests/unit/__init__.py`: Unit test namespace marker.
 - `backend/relat_ai/tests/unit/test_health.py`: Validates health and configuration endpoints of the API.
+- `backend/relat_ai/tests/unit/test_ingestion.py`: Verifies upload persistence behaviors, size enforcement, and loader support for multiple formats.
+- `backend/relat_ai/tests/unit/test_schema_detection.py`: Exercises profiling heuristics and serialization to API models.
+- `backend/relat_ai/tests/integration/test_datasets_api.py`: Integration coverage for dataset upload and retrieval endpoints.
 - `backend/relat_ai/tests/integration/__init__.py`: Integration test namespace marker.
 - `backend/scripts/benchmark.py`: CLI utility to benchmark correlation throughput on datasets.
 

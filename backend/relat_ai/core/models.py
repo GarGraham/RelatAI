@@ -3,18 +3,58 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from pydantic import ConfigDict
 
 
 class DatasetMetadata(BaseModel):
     """Metadata captured for uploaded datasets."""
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    dataset_id: str = Field(default_factory=lambda: uuid4().hex)
     name: str
     path: Path
+    original_filename: str | None = None
+    content_type: str | None = None
+    file_size_bytes: int | None = None
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
     row_count: int | None = None
     column_count: int | None = None
+
+
+class ColumnProfileModel(BaseModel):
+    """Serialized representation of column-level profiling output."""
+
+    name: str
+    logical_type: str
+    pandas_dtype: str
+    non_null_count: int
+    null_count: int
+    unique_count: int
+    sample_values: list[Any]
+    stats: dict[str, Any]
+
+
+class DatasetProfileModel(BaseModel):
+    """Serialized dataset-level profiling output."""
+
+    dataset_id: str
+    name: str
+    row_count: int
+    column_count: int
+    missing_cell_count: int
+    memory_usage_bytes: int
+    columns: list[ColumnProfileModel]
+
+
+class DatasetUploadResponse(BaseModel):
+    """Response payload returned when a dataset is ingested and profiled."""
+
+    metadata: DatasetMetadata
+    profile: DatasetProfileModel
 
 
 class AnalysisRequest(BaseModel):

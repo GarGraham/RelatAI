@@ -9,9 +9,10 @@
    - Scaffolded repository structure spanning backend, frontend, infrastructure, datasets, and testing harnesses.
    - Established Python tooling (Makefile, pyproject configuration, Black, Ruff, Pytest, Mypy) and dependency manifests.
    - Added containerization assets and CI workflow to standardize environments and automation.
-2. **Data Ingestion & Schema Detection**
-   - Build file upload handlers supporting CSV, Parquet, Excel.
-   - Implement data profiling to detect column types (numeric, categorical, datetime, text) and basic statistics.
+2. **Data Ingestion & Schema Detection** *(Completed)*
+   - Delivered FastAPI dataset upload and retrieval endpoints backed by a thread-safe in-memory registry.
+   - Persist uploads with streaming writes, size enforcement, and support for CSV, Parquet, and Excel sources.
+   - Implemented profiling heuristics covering logical type inference, per-column statistics, and dataset-level summaries.
 3. **Backend Analysis Engine**
    - Develop correlation engine covering pairwise methods (Pearson, Spearman, Kendall, Chi-square, Cramér's V, ANOVA, point-biserial).
    - Implement multivariate module with configurable max variables, anchor handling, and interaction depth (regression, ANOVA, partial correlations).
@@ -128,6 +129,7 @@ RelatAI/
 │   │   │   ├── main.py
 │   │   │   └── routes/
 │   │   │       ├── __init__.py
+│   │   │       ├── datasets.py
 │   │   │       └── health.py
 │   │   ├── core/
 │   │   │   ├── __init__.py
@@ -153,9 +155,12 @@ RelatAI/
 │   │       ├── conftest.py
 │   │       ├── unit/
 │   │       │   ├── __init__.py
-│   │       │   └── test_health.py
+│   │       │   ├── test_health.py
+│   │       │   ├── test_ingestion.py
+│   │       │   └── test_schema_detection.py
 │   │       └── integration/
-│   │           └── __init__.py
+│   │           ├── __init__.py
+│   │           └── test_datasets_api.py
 │   └── scripts/
 │       └── benchmark.py
 ├── frontend/

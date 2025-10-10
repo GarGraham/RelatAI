@@ -14,8 +14,15 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
     max_upload_size_mb: int = Field(default=25, alias="MAX_UPLOAD_SIZE_MB")
+    profile_sample_size: int = Field(default=5000, alias="PROFILE_SAMPLE_SIZE")
     temp_storage_path: Path = Field(default=Path("datasets/uploads"), alias="TEMP_STORAGE_PATH")
     cache_backend: str = Field(default="memory", alias="CACHE_BACKEND")
+
+    @property
+    def max_upload_size_bytes(self) -> int:
+        """Return the configured upload limit in bytes."""
+
+        return self.max_upload_size_mb * 1024 * 1024
 
     class Config:
         env_file = ".env"
