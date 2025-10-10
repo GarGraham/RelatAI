@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from collections.abc import Callable
 from functools import wraps
 from typing import Any, Generic, TypeVar
@@ -27,22 +28,32 @@ class CacheBackend(ABC, Generic[T]):
 
 
 class InMemoryCache(CacheBackend[T]):
-    """Simple in-memory cache suitable for development and testing."""
+    """Simple LRU in-memory cache suitable for development and testing."""
 
-    def __init__(self) -> None:
-        self._store: dict[str, T] = {}
+    def __init__(self, *, max_entries: int | None = 1024) -> None:
+        self._store: OrderedDict[str, T] = OrderedDict()
+        self._max_entries = max_entries
 
     def get(self, key: str) -> T | None:
-        return self._store.get(key)
+        value = self._store.get(key)
+        if value is not None:
+            self._store.move_to_end(key)
+        return value
 
     def set(self, key: str, value: T) -> None:
         self._store[key] = value
+        self._store.move_to_end(key)
+        if self._max_entries is not None and len(self._store) > self._max_entries:
+            self._store.popitem(last=False)
 
     def invalidate(self, key: str) -> None:
         self._store.pop(key, None)
 
 
-def cached(cache: CacheBackend[T], key_builder: Callable[..., str]) -> Callable[[Callable[..., T]], Callable[..., T]]:
+def cached(
+    cache: CacheBackend[T],
+    key_builder: Callable[..., str],
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """Decorator applying caching semantics to a function."""
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:

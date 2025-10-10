@@ -2,8 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY frontend/streamlit_app ./streamlit_app
 RUN pip install --no-cache-dir streamlit>=1.31
+
+COPY frontend/streamlit_app ./streamlit_app
 
 EXPOSE 8501
 

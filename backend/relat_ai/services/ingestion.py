@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import OrderedDict
-from dataclasses import asdict, dataclass
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
-from typing import Any, BinaryIO, Iterator
+from typing import BinaryIO
 
 import pandas as pd
 
 from relat_ai.core.config import get_settings
 from relat_ai.core.models import DatasetMetadata, DatasetUploadResponse
 from relat_ai.services import schema_detection
-
+from relat_ai.services.registry_state import (
+    RegistryStateEntry,
+    load_registry_state,
+    save_registry_state,
+)
 
 SUPPORTED_EXTENSIONS = {".csv", ".parquet", ".xlsx"}
 WRITE_CHUNK_SIZE = 1024 * 1024
@@ -33,11 +37,12 @@ class DatasetRegistry:
     """Thread-safe registry of uploaded datasets with persistence support."""
 
     def __init__(self, *, max_items: int | None = None, state_path: Path | None = None) -> None:
-        self._items: "OrderedDict[str, DatasetRecord]" = OrderedDict()
+        self._items: OrderedDict[str, DatasetRecord] = OrderedDict()
         self._lock = RLock()
         self._max_items = max_items
         self._state_path = state_path
         self._logger = logging.getLogger(__name__)
+        self._dirty = False
         if self._state_path is not None:
             self._state_path.parent.mkdir(parents=True, exist_ok=True)
             self._restore_state()
@@ -50,7 +55,9 @@ class DatasetRegistry:
             if dataset_id in self._items:
                 self._items.pop(dataset_id)
             self._items[dataset_id] = record
-            self._evict_if_needed_locked()
+            if self._evict_if_needed_locked():
+                self._dirty = True
+            self._dirty = True
             self._persist_state_locked()
 
     def get(self, dataset_id: str) -> DatasetRecord | None:
@@ -62,7 +69,6 @@ class DatasetRegistry:
                 return None
             # Maintain LRU semantics by moving the record to the end.
             self._items.move_to_end(dataset_id)
-            self._persist_state_locked()
             return record
 
     def remove(self, dataset_id: str) -> None:
@@ -73,27 +79,34 @@ class DatasetRegistry:
             if record is None:
                 return
             self._cleanup_record(record)
+            self._dirty = True
             self._persist_state_locked()
 
     def clear(self) -> None:
         """Remove all dataset records (primarily for testing)."""
 
         with self._lock:
+            if not self._items:
+                return
             for record in self._items.values():
                 self._cleanup_record(record)
             self._items.clear()
+            self._dirty = True
             self._persist_state_locked()
 
-    def _evict_if_needed_locked(self) -> None:
+    def _evict_if_needed_locked(self) -> bool:
         if self._max_items is None:
-            return
+            return False
 
+        evicted = False
         while len(self._items) > self._max_items:
             dataset_id, record = self._items.popitem(last=False)
             self._logger.info(
                 "Evicting dataset '%s' to enforce registry capacity", dataset_id
             )
             self._cleanup_record(record)
+            evicted = True
+        return evicted
 
     def _cleanup_record(self, record: DatasetRecord) -> None:
         try:
@@ -106,86 +119,30 @@ class DatasetRegistry:
             )
 
     def _persist_state_locked(self) -> None:
+        if self._state_path is None or not self._dirty:
+            return
+
+        entries = [
+            RegistryStateEntry(metadata=record.metadata, profile=record.profile)
+            for record in self._items.values()
+        ]
+        save_registry_state(self._state_path, entries, logger=self._logger)
+        self._dirty = False
+
+    def _restore_state(self) -> None:
         if self._state_path is None:
             return
 
-        state = [
-            {
-                "metadata": self._serialize_metadata(record.metadata),
-                "profile": self._serialize_profile(record.profile),
-            }
-            for record in self._items.values()
-        ]
-
-        try:
-            self._state_path.write_text(json.dumps(state), encoding="utf-8")
-        except OSError as exc:
-            self._logger.warning("Unable to persist dataset registry: %s", exc)
-
-    def _restore_state(self) -> None:
-        if not self._state_path.exists():
-            return
-
-        try:
-            raw = self._state_path.read_text(encoding="utf-8")
-            entries = json.loads(raw)
-        except (OSError, json.JSONDecodeError) as exc:
-            self._logger.warning("Failed to restore dataset registry: %s", exc)
-            return
-
+        entries = load_registry_state(self._state_path, logger=self._logger)
         for entry in entries:
-            try:
-                metadata_dict = entry.get("metadata", {})
-                profile_dict = entry.get("profile", {})
-                path_value = metadata_dict.get("path")
-                if path_value is None:
-                    self._logger.warning(
-                        "Skipping dataset restoration with missing path information: %s",
-                        metadata_dict,
-                    )
-                    continue
-                metadata_dict["path"] = Path(path_value)
-                metadata = DatasetMetadata(**metadata_dict)
-                if not metadata.path.exists():
-                    self._logger.warning(
-                        "Skipping dataset '%s' during registry restoration because path '%s' is missing",
-                        metadata.dataset_id,
-                        metadata.path,
-                    )
-                    continue
-                profile = self._deserialize_profile(profile_dict)
-            except Exception as exc:  # pragma: no cover - defensive path
-                self._logger.warning("Skipping invalid dataset registry entry: %s", exc)
-                continue
+            self._items[entry.metadata.dataset_id] = DatasetRecord(
+                metadata=entry.metadata,
+                profile=entry.profile,
+            )
 
-            self._items[metadata.dataset_id] = DatasetRecord(metadata=metadata, profile=profile)
-
-        self._evict_if_needed_locked()
-        self._persist_state_locked()
-
-    def _serialize_metadata(self, metadata: DatasetMetadata) -> dict[str, Any]:
-        data = metadata.model_dump(mode="json", exclude_none=True)
-        data["path"] = str(metadata.path)
-        return data
-
-    def _serialize_profile(
-        self, profile: schema_detection.DatasetProfile
-    ) -> dict[str, Any]:
-        payload = asdict(profile)
-        payload["columns"] = [asdict(column) for column in profile.columns]
-        return payload
-
-    def _deserialize_profile(self, payload: dict[str, Any]) -> schema_detection.DatasetProfile:
-        columns = [schema_detection.ColumnProfile(**column) for column in payload.get("columns", [])]
-        return schema_detection.DatasetProfile(
-            dataset_id=payload.get("dataset_id", ""),
-            name=payload.get("name", ""),
-            row_count=int(payload.get("row_count", 0)),
-            column_count=int(payload.get("column_count", 0)),
-            missing_cell_count=int(payload.get("missing_cell_count", 0)),
-            memory_usage_bytes=int(payload.get("memory_usage_bytes", 0)),
-            columns=columns,
-        )
+        if self._evict_if_needed_locked():
+            self._dirty = True
+            self._persist_state_locked()
 
 
 _REGISTRY: DatasetRegistry | None = None
@@ -236,7 +193,12 @@ def get_dataset(dataset_id: str) -> DatasetUploadResponse | None:
     return _build_response(record)
 
 
-def save_upload(file_obj: BinaryIO, filename: str, *, content_type: str | None = None) -> DatasetUploadResponse:
+def save_upload(
+    file_obj: BinaryIO,
+    filename: str,
+    *,
+    content_type: str | None = None,
+) -> DatasetUploadResponse:
     """Persist an uploaded dataset, profile it, and return metadata and profile."""
 
     sanitized_name = Path(filename).name

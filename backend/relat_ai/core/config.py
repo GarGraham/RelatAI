@@ -3,14 +3,15 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
     """Application settings sourced from environment variables."""
 
     app_env: str = Field(default="development", alias="APP_ENV")
-    app_host: str = Field(default="0.0.0.0", alias="APP_HOST")
+    app_host: str = Field(default="127.0.0.1", alias="APP_HOST")
     app_port: int = Field(default=8000, alias="APP_PORT")
     log_level: str = Field(default="info", alias="LOG_LEVEL")
     max_upload_size_mb: int = Field(default=25, alias="MAX_UPLOAD_SIZE_MB")
