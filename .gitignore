@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.build/
+.venv/
+venv/
+.env
+.env.*
+.idea/
+.vscode/
+.mypy_cache/
+.pytest_cache/
+htmlcov/
+coverage.xml
+
+# Node
+node_modules/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit/Frontend builds
+frontend/streamlit_app/__pycache__/
+frontend/webapp/build/
+
+# Data artifacts
+datasets/uploads/
+*.parquet
+*.csv
+*.xlsx
