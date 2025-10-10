@@ -24,9 +24,13 @@ def compute_pairwise_correlations(
     if method not in PAIRWISE_METHODS:
         raise ValueError(f"Unsupported correlation method: {method}")
 
+    column_names = list(columns)
+    if len(column_names) < 2:
+        return AnalysisResult(correlations=[])
+
     results: list[CorrelationRecord] = []
-    for idx, column_a in enumerate(columns):
-        for column_b in list(columns)[idx + 1 :]:
+    for idx, column_a in enumerate(column_names):
+        for column_b in column_names[idx + 1 :]:
             series_a = frame[column_a].dropna()
             series_b = frame[column_b].dropna()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -30,6 +31,25 @@ def test_save_upload_respects_size_limit(settings):
     settings.max_upload_size_mb = 0
     with pytest.raises(ValueError, match="size limit"):
         ingestion.save_upload(BytesIO(b"0" * 2048), "too_large.csv")
+
+
+def test_save_upload_cleans_up_on_load_failure(settings, monkeypatch):
+    """Temporary files should be removed if frame loading fails."""
+
+    captured_path: Path | None = None
+
+    def _fail_load(path: Path) -> pd.DataFrame:  # pragma: no cover - type stub
+        nonlocal captured_path
+        captured_path = path
+        raise ValueError("boom")
+
+    monkeypatch.setattr(ingestion, "load_frame", _fail_load)
+
+    with pytest.raises(ValueError, match="boom"):
+        ingestion.save_upload(BytesIO(b"value\n1"), "broken.csv")
+
+    assert captured_path is not None
+    assert not captured_path.exists()
 
 
 def test_load_frame_supports_multiple_formats(tmp_path):

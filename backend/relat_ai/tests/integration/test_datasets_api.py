@@ -19,9 +19,11 @@ def test_dataset_upload_and_retrieve(client: TestClient) -> None:
     assert response.status_code == 201
     payload = response.json()
     dataset_id = payload["metadata"]["dataset_id"]
+    assert "path" not in payload["metadata"]
 
     follow_up = client.get(f"/datasets/{dataset_id}")
     assert follow_up.status_code == 200
     retrieved = follow_up.json()
     assert retrieved["metadata"]["dataset_id"] == dataset_id
+    assert "path" not in retrieved["metadata"]
     assert retrieved["profile"]["row_count"] == 2

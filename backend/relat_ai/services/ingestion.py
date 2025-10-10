@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import logging
+from collections import OrderedDict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from threading import RLock
-from typing import BinaryIO, Iterator
+from typing import Any, BinaryIO, Iterator
 
 import pandas as pd
 
@@ -27,56 +30,207 @@ class DatasetRecord:
 
 
 class DatasetRegistry:
-    """Thread-safe in-memory registry of uploaded datasets."""
+    """Thread-safe registry of uploaded datasets with persistence support."""
 
-    def __init__(self) -> None:
-        self._items: dict[str, DatasetRecord] = {}
+    def __init__(self, *, max_items: int | None = None, state_path: Path | None = None) -> None:
+        self._items: "OrderedDict[str, DatasetRecord]" = OrderedDict()
         self._lock = RLock()
+        self._max_items = max_items
+        self._state_path = state_path
+        self._logger = logging.getLogger(__name__)
+        if self._state_path is not None:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._restore_state()
 
     def add(self, record: DatasetRecord) -> None:
         """Register a dataset record."""
 
         with self._lock:
-            self._items[record.metadata.dataset_id] = record
+            dataset_id = record.metadata.dataset_id
+            if dataset_id in self._items:
+                self._items.pop(dataset_id)
+            self._items[dataset_id] = record
+            self._evict_if_needed_locked()
+            self._persist_state_locked()
 
     def get(self, dataset_id: str) -> DatasetRecord | None:
         """Return a dataset record if it exists."""
 
         with self._lock:
-            return self._items.get(dataset_id)
+            record = self._items.get(dataset_id)
+            if record is None:
+                return None
+            # Maintain LRU semantics by moving the record to the end.
+            self._items.move_to_end(dataset_id)
+            self._persist_state_locked()
+            return record
+
+    def remove(self, dataset_id: str) -> None:
+        """Remove a dataset from the registry if it exists."""
+
+        with self._lock:
+            record = self._items.pop(dataset_id, None)
+            if record is None:
+                return
+            self._cleanup_record(record)
+            self._persist_state_locked()
 
     def clear(self) -> None:
         """Remove all dataset records (primarily for testing)."""
 
         with self._lock:
+            for record in self._items.values():
+                self._cleanup_record(record)
             self._items.clear()
+            self._persist_state_locked()
+
+    def _evict_if_needed_locked(self) -> None:
+        if self._max_items is None:
+            return
+
+        while len(self._items) > self._max_items:
+            dataset_id, record = self._items.popitem(last=False)
+            self._logger.info(
+                "Evicting dataset '%s' to enforce registry capacity", dataset_id
+            )
+            self._cleanup_record(record)
+
+    def _cleanup_record(self, record: DatasetRecord) -> None:
+        try:
+            record.metadata.path.unlink(missing_ok=True)
+        except OSError as exc:
+            self._logger.warning(
+                "Failed to remove dataset file '%s': %s",
+                record.metadata.path,
+                exc,
+            )
+
+    def _persist_state_locked(self) -> None:
+        if self._state_path is None:
+            return
+
+        state = [
+            {
+                "metadata": self._serialize_metadata(record.metadata),
+                "profile": self._serialize_profile(record.profile),
+            }
+            for record in self._items.values()
+        ]
+
+        try:
+            self._state_path.write_text(json.dumps(state), encoding="utf-8")
+        except OSError as exc:
+            self._logger.warning("Unable to persist dataset registry: %s", exc)
+
+    def _restore_state(self) -> None:
+        if not self._state_path.exists():
+            return
+
+        try:
+            raw = self._state_path.read_text(encoding="utf-8")
+            entries = json.loads(raw)
+        except (OSError, json.JSONDecodeError) as exc:
+            self._logger.warning("Failed to restore dataset registry: %s", exc)
+            return
+
+        for entry in entries:
+            try:
+                metadata_dict = entry.get("metadata", {})
+                profile_dict = entry.get("profile", {})
+                path_value = metadata_dict.get("path")
+                if path_value is None:
+                    self._logger.warning(
+                        "Skipping dataset restoration with missing path information: %s",
+                        metadata_dict,
+                    )
+                    continue
+                metadata_dict["path"] = Path(path_value)
+                metadata = DatasetMetadata(**metadata_dict)
+                if not metadata.path.exists():
+                    self._logger.warning(
+                        "Skipping dataset '%s' during registry restoration because path '%s' is missing",
+                        metadata.dataset_id,
+                        metadata.path,
+                    )
+                    continue
+                profile = self._deserialize_profile(profile_dict)
+            except Exception as exc:  # pragma: no cover - defensive path
+                self._logger.warning("Skipping invalid dataset registry entry: %s", exc)
+                continue
+
+            self._items[metadata.dataset_id] = DatasetRecord(metadata=metadata, profile=profile)
+
+        self._evict_if_needed_locked()
+        self._persist_state_locked()
+
+    def _serialize_metadata(self, metadata: DatasetMetadata) -> dict[str, Any]:
+        data = metadata.model_dump(mode="json", exclude_none=True)
+        data["path"] = str(metadata.path)
+        return data
+
+    def _serialize_profile(
+        self, profile: schema_detection.DatasetProfile
+    ) -> dict[str, Any]:
+        payload = asdict(profile)
+        payload["columns"] = [asdict(column) for column in profile.columns]
+        return payload
+
+    def _deserialize_profile(self, payload: dict[str, Any]) -> schema_detection.DatasetProfile:
+        columns = [schema_detection.ColumnProfile(**column) for column in payload.get("columns", [])]
+        return schema_detection.DatasetProfile(
+            dataset_id=payload.get("dataset_id", ""),
+            name=payload.get("name", ""),
+            row_count=int(payload.get("row_count", 0)),
+            column_count=int(payload.get("column_count", 0)),
+            missing_cell_count=int(payload.get("missing_cell_count", 0)),
+            memory_usage_bytes=int(payload.get("memory_usage_bytes", 0)),
+            columns=columns,
+        )
 
 
-_REGISTRY = DatasetRegistry()
+_REGISTRY: DatasetRegistry | None = None
+
+
+def _create_registry() -> DatasetRegistry:
+    settings = get_settings()
+    max_items = settings.dataset_registry_max_items
+    if max_items is not None and max_items <= 0:
+        max_items = None
+
+    return DatasetRegistry(
+        max_items=max_items,
+        state_path=settings.dataset_registry_state_path,
+    )
 
 
 def get_registry() -> DatasetRegistry:
     """Return the global dataset registry instance."""
 
+    global _REGISTRY
+    if _REGISTRY is None:
+        _REGISTRY = _create_registry()
     return _REGISTRY
 
 
 def register_dataset(record: DatasetRecord) -> None:
     """Register a dataset with the global registry."""
 
-    _REGISTRY.add(record)
+    get_registry().add(record)
 
 
 def reset_registry() -> None:
-    """Clear the global dataset registry."""
+    """Clear and reinitialise the global dataset registry."""
 
-    _REGISTRY.clear()
+    global _REGISTRY
+    if _REGISTRY is not None:
+        _REGISTRY.clear()
+    _REGISTRY = None
 
 
 def get_dataset(dataset_id: str) -> DatasetUploadResponse | None:
     """Retrieve a dataset response from the registry if it exists."""
 
-    record = _REGISTRY.get(dataset_id)
+    record = get_registry().get(dataset_id)
     if record is None:
         return None
     return _build_response(record)
@@ -101,7 +255,11 @@ def save_upload(file_obj: BinaryIO, filename: str, *, content_type: str | None =
     file_obj.seek(0)
     bytes_written = _write_stream(file_obj, target_path, settings.max_upload_size_bytes)
 
-    frame = load_frame(target_path)
+    try:
+        frame = load_frame(target_path)
+    except Exception:
+        target_path.unlink(missing_ok=True)
+        raise
     dataset_metadata.path = target_path
     dataset_metadata.original_filename = sanitized_name
     dataset_metadata.content_type = content_type
