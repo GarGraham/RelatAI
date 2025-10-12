@@ -17,6 +17,7 @@ A summary of actions taken to resolve the bug shall be documented.
 New Features and Large Refactors:
 New features and large refactors shall always include a review of the entire repo before any action is taken.
 Upon completion of the review, a detailed plan is required before any code is changed. This plan shall include the purpose of the new feature/refactor, the implementation plan, a risk analysis on impact to existing repo items, and other approaches that were considered but not chosen and why.
+New feature code shall always include ample commenting to make code snippets easier to understand for both Human and AI users.
 
 Commit Guidelines:
 Prefix commits with type: feat:, fix:, docs:

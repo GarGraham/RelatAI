@@ -10,6 +10,7 @@
 - `docs/agents.md`: Contribution guidelines covering reviews, planning expectations, and commit conventions.
 - `docs/ImplementationPlan.md`: Detailed implementation roadmap, milestone descriptions, and repository structure blueprint.
 - `docs/Reference-Guide.md`: This reference document mapping repository files to their purpose.
+- `docs/REPO_REVIEW.md`: Comprehensive repository review identifying bugs, refactoring opportunities, and capability assessment against intended use-case.
 - `docs/TechnicalSpecification.md`: Architectural design, statistical methods, and performance constraints.
 - `docs/UserRequirements.md`: Personas, functional requirements, and experience goals for the analytics platform.
 
