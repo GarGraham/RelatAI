@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from relat_ai.core.exceptions import DatasetRegistryPersistenceError
 from relat_ai.services import ingestion
 
 
@@ -78,3 +79,14 @@ def test_load_frame_rejects_unsupported_extension(tmp_path):
 
     with pytest.raises(ValueError, match="Unsupported"):
         ingestion.load_frame(txt_path)
+
+
+def test_save_upload_raises_when_registry_write_fails(
+    settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Dataset uploads should surface persistence failures to the caller."""
+
+    monkeypatch.setattr(ingestion, "save_registry_state", lambda *args, **kwargs: False)
+
+    with pytest.raises(DatasetRegistryPersistenceError):
+        ingestion.save_upload(BytesIO(b"a,b\n1,2"), "failing.csv")

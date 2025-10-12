@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
+from pydantic import BaseModel, ConfigDict, Field
 
 
-@dataclass(slots=True)
-class ColumnProfile:
+class ColumnProfile(BaseModel):
     """Summary statistics for a column used to drive analysis selection."""
+
+    model_config = ConfigDict(frozen=True)
 
     name: str
     logical_type: str
@@ -18,13 +19,14 @@ class ColumnProfile:
     non_null_count: int
     null_count: int
     unique_count: int
-    sample_values: list[Any]
-    stats: dict[str, Any]
+    sample_values: list[Any] = Field(default_factory=list)
+    stats: dict[str, Any] = Field(default_factory=dict)
 
 
-@dataclass(slots=True)
-class DatasetProfile:
+class DatasetProfile(BaseModel):
     """Aggregated dataset profile information."""
+
+    model_config = ConfigDict(frozen=True)
 
     dataset_id: str
     name: str
@@ -48,7 +50,9 @@ def profile_frame(
 ) -> DatasetProfile:
     """Generate a dataset profile used for UI defaults and analysis configuration."""
 
-    column_profiles = [profile_column(frame[column], sample_size=sample_size) for column in frame.columns]
+    column_profiles = [
+        profile_column(frame[column], sample_size=sample_size) for column in frame.columns
+    ]
     return DatasetProfile(
         dataset_id=dataset_id,
         name=dataset_name,
@@ -71,7 +75,7 @@ def profile_column(series: pd.Series, *, sample_size: int | None = None) -> Colu
     unique_count = int(series.nunique(dropna=True))
     samples = series.dropna().head(5).tolist()
 
-    stats: dict[str, Any] = {}
+    stats: dict[str, Any]
     if logical_type == "numeric":
         stats = _numeric_stats(series, sample_size)
     elif logical_type == "datetime":
@@ -98,18 +102,9 @@ def profile_column(series: pd.Series, *, sample_size: int | None = None) -> Colu
 def to_model(profile: DatasetProfile):
     """Convert a dataset profile dataclass to the API response model."""
 
-    from relat_ai.core.models import DatasetProfileModel, ColumnProfileModel
+    from relat_ai.core.models import DatasetProfileModel
 
-    column_models = [ColumnProfileModel(**asdict(column)) for column in profile.columns]
-    return DatasetProfileModel(
-        dataset_id=profile.dataset_id,
-        name=profile.name,
-        row_count=profile.row_count,
-        column_count=profile.column_count,
-        missing_cell_count=profile.missing_cell_count,
-        memory_usage_bytes=profile.memory_usage_bytes,
-        columns=column_models,
-    )
+    return DatasetProfileModel.model_validate(profile.model_dump())
 
 
 def _resolve_logical_type(series: pd.Series, dtype_kind: str) -> str:
@@ -137,10 +132,11 @@ def _resolve_logical_type(series: pd.Series, dtype_kind: str) -> str:
 def _numeric_stats(series: pd.Series, sample_size: int | None) -> dict[str, Any]:
     """Return descriptive stats for numeric columns using sampling when needed."""
 
-    clean = pd.to_numeric(series.dropna(), errors="coerce")
-    clean = clean.dropna()
-    if sample_size and len(clean) > sample_size:
-        clean = clean.sample(sample_size, random_state=0)
+    clean = _prepare_clean_series(
+        series,
+        converter=lambda s: pd.to_numeric(s, errors="coerce"),
+        sample_size=sample_size,
+    )
 
     if clean.empty:
         return {"min": None, "max": None, "mean": None, "std": None}
@@ -156,12 +152,13 @@ def _numeric_stats(series: pd.Series, sample_size: int | None) -> dict[str, Any]
 def _datetime_stats(series: pd.Series) -> dict[str, Any]:
     """Return descriptive stats for datetime columns."""
 
-    clean = series.dropna()
+    clean = _prepare_clean_series(series)
     if clean.empty:
         return {"earliest": None, "latest": None}
 
-    as_datetime = pd.to_datetime(clean, errors="coerce", utc=True)
-    as_datetime = as_datetime.dropna()
+    as_datetime = _prepare_clean_series(
+        clean, converter=lambda s: pd.to_datetime(s, errors="coerce", utc=True)
+    )
     if as_datetime.empty:
         return {"earliest": None, "latest": None}
 
@@ -182,7 +179,7 @@ def _boolean_stats(series: pd.Series) -> dict[str, Any]:
 def _categorical_stats(series: pd.Series) -> dict[str, Any]:
     """Return top category frequencies for categorical features."""
 
-    clean = series.dropna().astype(str)
+    clean = _prepare_clean_series(series, converter=lambda s: s.astype(str))
     if clean.empty:
         return {"top_values": []}
 
@@ -197,7 +194,7 @@ def _categorical_stats(series: pd.Series) -> dict[str, Any]:
 def _text_stats(series: pd.Series) -> dict[str, Any]:
     """Return aggregate metrics for free-text columns."""
 
-    clean = series.dropna().astype(str)
+    clean = _prepare_clean_series(series, converter=lambda s: s.astype(str))
     if clean.empty:
         return {"avg_length": 0.0, "unique_ratio": 0.0}
 
@@ -207,3 +204,25 @@ def _text_stats(series: pd.Series) -> dict[str, Any]:
         "avg_length": float(lengths.mean()),
         "unique_ratio": float(unique_ratio),
     }
+
+
+def _prepare_clean_series(
+    series: pd.Series,
+    *,
+    converter: Callable[[pd.Series], pd.Series] | None = None,
+    sample_size: int | None = None,
+) -> pd.Series:
+    """Normalise a series before computing statistics.
+
+    The helper consolidates the repeated patterns of dropping missing values,
+    applying a conversion, and optionally sampling.
+    """
+
+    clean = series.dropna()
+    if converter is not None:
+        clean = converter(clean)
+    if hasattr(clean, "dropna"):
+        clean = clean.dropna()
+    if sample_size and len(clean) > sample_size:
+        clean = clean.sample(sample_size, random_state=0)
+    return clean

@@ -7,11 +7,13 @@ from collections.abc import Iterable
 import pandas as pd
 import pytest
 
+from relat_ai.services.analysis import pairwise
 from relat_ai.services.analysis.multivariate import (
     RegressionConfig,
     build_multivariate_models,
 )
 from relat_ai.services.analysis.pairwise import compute_pairwise_correlations
+from relat_ai.utils.caching import InMemoryCache
 
 
 def _iter_columns(columns: Iterable[str]):
@@ -58,3 +60,31 @@ def test_build_multivariate_models_skips_invalid_configs(caplog: pytest.LogCaptu
     warnings = [record.message for record in caplog.records]
     assert any("missing columns" in message for message in warnings)
     assert any("fitting error" in message for message in warnings)
+
+
+def test_pairwise_correlations_are_cached(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Repeated pairwise requests should reuse cached results when available."""
+
+    frame = pd.DataFrame({"x": [1, 2, 3], "y": [3, 4, 5]})
+    cache = InMemoryCache()
+
+    result = compute_pairwise_correlations(
+        frame,
+        ["x", "y"],
+        dataset_id="dataset",
+        cache=cache,
+    )
+
+    def _unexpected(*args, **kwargs):  # pragma: no cover - defensive guard
+        raise AssertionError("cache miss")
+
+    monkeypatch.setitem(pairwise.PAIRWISE_METHODS, "pearson", _unexpected)
+
+    cached = compute_pairwise_correlations(
+        frame,
+        ["x", "y"],
+        dataset_id="dataset",
+        cache=cache,
+    )
+
+    assert cached is result

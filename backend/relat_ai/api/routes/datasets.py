@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from relat_ai.core.models import DatasetUploadResponse
+from relat_ai.core.exceptions import DatasetRegistryPersistenceError
 from relat_ai.services.ingestion import get_dataset, save_upload
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
@@ -25,6 +26,11 @@ async def upload_dataset(file: DatasetUpload) -> DatasetUploadResponse:
         return save_upload(file.file, file.filename or "dataset", content_type=file.content_type)
     except ValueError as exc:  # pragma: no cover - defensive path
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except DatasetRegistryPersistenceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to persist dataset registry; please retry",
+        ) from exc
 
 
 @router.get(

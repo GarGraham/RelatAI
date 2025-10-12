@@ -3,10 +3,17 @@
 from collections.abc import Iterator
 
 import pytest
-from fastapi.testclient import TestClient
+
+try:
+    from fastapi.testclient import TestClient
+except RuntimeError as exc:  # pragma: no cover - optional dependency guard
+    TestClient = None  # type: ignore[assignment]
+    _TEST_CLIENT_IMPORT_ERROR = exc
+else:
+    _TEST_CLIENT_IMPORT_ERROR = None
 
 from relat_ai.api.main import create_app
-from relat_ai.core.config import Settings
+from relat_ai.core.config import Settings, override_settings
 from relat_ai.services.ingestion import reset_registry
 
 
@@ -20,7 +27,7 @@ def _reset_registry() -> Iterator[None]:
 
 
 @pytest.fixture()
-def settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Settings:
+def settings(tmp_path) -> Settings:
     """Provide isolated application settings for tests."""
 
     uploads_dir = tmp_path / "uploads"
@@ -32,13 +39,16 @@ def settings(tmp_path, monkeypatch: pytest.MonkeyPatch) -> Settings:
         dataset_registry_max_items=10,
     )
 
-    monkeypatch.setattr("relat_ai.core.config.get_settings", lambda: config)
-    return config
+    with override_settings(config):
+        yield config
 
 
 @pytest.fixture()
-def client(settings: Settings) -> TestClient:
+def client(settings: Settings) -> "TestClient":
     """Return a FastAPI test client configured with test settings."""
+
+    if TestClient is None:  # pragma: no cover - optional dependency guard
+        pytest.skip(f"httpx is required for API tests: {_TEST_CLIENT_IMPORT_ERROR}")
 
     app = create_app(settings)
     return TestClient(app)
