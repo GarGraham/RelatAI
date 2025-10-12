@@ -26,20 +26,21 @@
 - `backend/relat_ai/api/routes/datasets.py`: Dataset upload and retrieval endpoints returning profiling metadata.
 - `backend/relat_ai/api/routes/health.py`: Health check endpoint used for uptime monitoring.
 - `backend/relat_ai/core/__init__.py`: Re-exports configuration primitives.
-- `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration (upload size, profiling sample size, storage paths).
+- `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration (upload size, profiling sample size, storage paths) with ContextVar-based dependency injection support.
+- `backend/relat_ai/core/exceptions.py`: Custom exception hierarchy for domain-specific errors including persistence failures and registry errors.
 - `backend/relat_ai/core/models.py`: Shared domain models for dataset metadata, profiling payloads, and analysis requests.
 - `backend/relat_ai/services/__init__.py`: Aggregates service layer modules.
-- `backend/relat_ai/services/ingestion.py`: Streaming upload persistence, dataset registry management, and dataframe loaders.
-- `backend/relat_ai/services/schema_detection.py`: Dataset and column profiling utilities with logical type inference and statistics extraction.
+- `backend/relat_ai/services/ingestion.py`: Streaming upload persistence, dataset registry management with retry logic, and dataframe loaders supporting CSV, Parquet, and Excel formats.
+- `backend/relat_ai/services/registry_state.py`: Persistence and restoration helpers for dataset registry state with defensive error handling and validation.
+- `backend/relat_ai/services/schema_detection.py`: Dataset and column profiling utilities with logical type inference, statistics extraction, and consolidated computation helpers.
 - `backend/relat_ai/services/analysis/__init__.py`: Public interface for statistical pipelines.
 - `backend/relat_ai/services/analysis/pairwise.py`: Pairwise correlation computations (Pearson, Spearman, Kendall).
 - `backend/relat_ai/services/analysis/multivariate.py`: Regression-based multivariate modeling helpers.
 - `backend/relat_ai/services/analysis/utils.py`: Data structures for correlation and model outputs.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
-- `backend/relat_ai/utils/__init__.py`: Utility package exports for caching and parallelism helpers.
-- `backend/relat_ai/utils/caching.py`: Cache interface, in-memory implementation, and decorator utility.
-- `backend/relat_ai/utils/parallel.py`: Chunking and thread pool execution helpers for workload parallelism.
+- `backend/relat_ai/utils/__init__.py`: Utility package exports for caching helpers.
+- `backend/relat_ai/utils/caching.py`: Cache interface, in-memory LRU implementation, and decorator utility for memoization.
 - `backend/relat_ai/tests/__init__.py`: Test suite package initialization.
 - `backend/relat_ai/tests/conftest.py`: Shared pytest fixtures including FastAPI test client setup.
 - `backend/relat_ai/tests/unit/__init__.py`: Unit test namespace marker.

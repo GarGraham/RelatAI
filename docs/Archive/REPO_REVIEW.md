@@ -1,3 +1,5 @@
+ARCHIVED - NO LONGER RELEVANT
+
 # RelatAI Repository Review
 **Date**: October 12, 2025  
 **Reviewer**: GitHub Copilot  
