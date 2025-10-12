@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Iterable
 
 from relat_ai.services.analysis.utils import AnalysisResult
 
@@ -29,18 +30,64 @@ class VisualizationBundle:
     """Collection of visualization-ready payloads."""
 
     heatmap: Heatmap | None = None
+    network: "CorrelationNetwork" | None = None
+    strongest_links: list[HeatmapCell] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class GraphNode:
+    """Node descriptor for network-style visualisations."""
+
+    id: str
+    label: str
+
+
+@dataclass(slots=True)
+class GraphEdge:
+    """Edge descriptor for pairwise relationship networks."""
+
+    source: str
+    target: str
+    weight: float
+
+
+@dataclass(slots=True)
+class CorrelationNetwork:
+    """Network representation of correlations."""
+
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
 
 
 def build_correlation_heatmap(result: AnalysisResult) -> VisualizationBundle:
     """Convert pairwise correlation results into heatmap data."""
 
-    if not result.correlations:
-        return VisualizationBundle(heatmap=None)
+    correlations = list(result.correlations or [])
+    if not correlations:
+        return VisualizationBundle(heatmap=None, network=None)
 
-    cells = [
+    cells: list[HeatmapCell] = [
         HeatmapCell(x=record.variables[0], y=record.variables[1], value=record.coefficient)
-        for record in result.correlations
+        for record in correlations
     ]
+    network = _build_network_from_cells(cells)
+    strongest_links = _select_strongest_links(cells)
     return VisualizationBundle(
         heatmap=Heatmap(title="Correlation Matrix", cells=cells),
+        network=network,
+        strongest_links=strongest_links,
     )
+
+
+def _build_network_from_cells(cells: Iterable[HeatmapCell]) -> CorrelationNetwork:
+    node_names = sorted({cell.x for cell in cells} | {cell.y for cell in cells})
+    nodes = [GraphNode(id=name, label=name) for name in node_names]
+    edges = [
+        GraphEdge(source=cell.x, target=cell.y, weight=abs(cell.value)) for cell in cells
+    ]
+    return CorrelationNetwork(nodes=nodes, edges=edges)
+
+
+def _select_strongest_links(cells: Iterable[HeatmapCell], limit: int = 5) -> list[HeatmapCell]:
+    sorted_cells = sorted(cells, key=lambda cell: abs(cell.value), reverse=True)
+    return sorted_cells[:limit]

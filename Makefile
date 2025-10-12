@@ -1,7 +1,12 @@
 .PHONY: install install-dev format lint test type-check run-backend
 
-PYTHON?=python3
-PIP?=pip3
+ifeq ($(OS),Windows_NT)
+PYTHON ?= python
+PIP ?= pip
+else
+PYTHON ?= python3
+PIP ?= pip3
+endif
 BACKEND_DIR=backend
 
 install:

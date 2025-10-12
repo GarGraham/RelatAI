@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -98,8 +98,13 @@ def save_registry_state(
     entries: Sequence[RegistryStateEntry],
     *,
     logger: logging.Logger | None = None,
-) -> None:
-    """Persist *entries* to *path* with basic error handling."""
+) -> bool:
+    """Persist *entries* to *path* with basic error handling.
+
+    Returns ``True`` when the payload was successfully written and ``False`` when
+    an :class:`OSError` prevented persistence.  Callers can use the boolean
+    return value to decide whether to retry or surface an error to clients.
+    """
 
     serialised = [
         {
@@ -114,7 +119,9 @@ def save_registry_state(
     except OSError as exc:
         if logger:
             logger.warning("Unable to persist dataset registry: %s", exc)
+        return False
 
+    return True
 
 def _serialize_metadata(metadata: DatasetMetadata) -> dict[str, object]:
     payload = metadata.model_dump(mode="json", exclude_none=True)
@@ -125,9 +132,7 @@ def _serialize_metadata(metadata: DatasetMetadata) -> dict[str, object]:
 def _serialize_profile(
     profile: schema_detection.DatasetProfile,
 ) -> dict[str, object]:
-    payload = asdict(profile)
-    payload["columns"] = [asdict(column) for column in profile.columns]
-    return payload
+    return profile.model_dump()
 
 
 def _deserialize_profile(

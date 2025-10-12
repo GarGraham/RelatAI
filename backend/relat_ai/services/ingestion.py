@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections import OrderedDict
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from typing import BinaryIO
 import pandas as pd
 
 from relat_ai.core.config import get_settings
+from relat_ai.core.exceptions import DatasetRegistryPersistenceError
 from relat_ai.core.models import DatasetMetadata, DatasetUploadResponse
 from relat_ai.services import schema_detection
 from relat_ai.services.registry_state import (
@@ -23,6 +25,7 @@ from relat_ai.services.registry_state import (
 
 SUPPORTED_EXTENSIONS = {".csv", ".parquet", ".xlsx"}
 WRITE_CHUNK_SIZE = 1024 * 1024
+PERSISTENCE_RETRY_DELAYS = (0.0, 0.1, 0.3)
 
 
 @dataclass(slots=True)
@@ -126,8 +129,19 @@ class DatasetRegistry:
             RegistryStateEntry(metadata=record.metadata, profile=record.profile)
             for record in self._items.values()
         ]
-        save_registry_state(self._state_path, entries, logger=self._logger)
-        self._dirty = False
+        for delay in PERSISTENCE_RETRY_DELAYS:
+            if save_registry_state(self._state_path, entries, logger=self._logger):
+                self._dirty = False
+                return
+            if delay:
+                time.sleep(delay)
+
+        message = (
+            "Failed to persist dataset registry state after %s attempts"
+            % len(PERSISTENCE_RETRY_DELAYS)
+        )
+        self._logger.error(message)
+        raise DatasetRegistryPersistenceError(message)
 
     def _restore_state(self) -> None:
         if self._state_path is None:

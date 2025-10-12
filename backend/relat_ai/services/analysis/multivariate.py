@@ -9,6 +9,7 @@ from typing import Iterable
 
 import pandas as pd
 import statsmodels.api as sm
+import numpy as np
 from numpy.linalg import LinAlgError
 from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
@@ -53,6 +54,13 @@ def build_multivariate_models(
         x = design
         if config.add_intercept:
             x = sm.add_constant(x, prepend=True, has_constant="add")
+
+        if np.linalg.matrix_rank(x) < x.shape[1]:
+            LOGGER.warning(
+                "Skipping regression for response '%s' due to singular design matrix (fitting error)",
+                config.response,
+            )
+            continue
 
         try:
             model = sm.OLS(y, x).fit()
