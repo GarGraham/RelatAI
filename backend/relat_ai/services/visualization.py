@@ -8,6 +8,15 @@ from typing import Iterable
 from relat_ai.services.analysis.utils import AnalysisResult
 
 
+HEATMAP_COMPATIBLE_METHODS = {
+    "pearson",
+    "spearman",
+    "kendall",
+    "point_biserial",
+    "cramers_v",
+}
+
+
 @dataclass(slots=True)
 class HeatmapCell:
     """Metadata describing a single heatmap cell."""
@@ -62,7 +71,11 @@ class CorrelationNetwork:
 def build_correlation_heatmap(result: AnalysisResult) -> VisualizationBundle:
     """Convert pairwise correlation results into heatmap data."""
 
-    correlations = list(result.correlations or [])
+    correlations = [
+        record
+        for record in (result.correlations or [])
+        if record.method in HEATMAP_COMPATIBLE_METHODS
+    ]
     if not correlations:
         return VisualizationBundle(heatmap=None, network=None)
 
