@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from typing import Iterable
 
 from relat_ai.services.analysis.utils import AnalysisResult, CorrelationRecord, ModelSummary
@@ -23,29 +25,31 @@ class SummarizationService:
         return "\n\n".join(sections)
 
     def _summarize_correlations(self, correlations: Iterable[CorrelationRecord]) -> str:
-        bullets = [
-            f"{a} vs {b}: coeff={coef:.3f}, p={p_value:.3g}, n={sample_size} ({method})"
-            for a, b, coef, p_value, sample_size, method in (
-                (
-                    record.variables[0],
-                    record.variables[1],
-                    record.coefficient,
-                    record.p_value,
-                    record.sample_size,
-                    record.method,
-                )
-                for record in correlations
-            )
-        ]
+        bullets = []
+        for record in correlations:
+            variables = f"{record.variables[0]} vs {record.variables[1]}"
+            metrics = [f"coeff={record.coefficient:.3f}"]
+            if record.p_value is not None:
+                metrics.append(f"p={record.p_value:.3g}")
+            if record.statistic is not None and record.method not in {"pearson", "spearman", "kendall", "point_biserial", "cramers_v"}:
+                metrics.append(f"stat={record.statistic:.3g}")
+            metrics.append(f"n={record.sample_size}")
+            bullets.append(f"{variables}: {', '.join(metrics)} ({record.method})")
         if not bullets:
             return "No pairwise correlations computed."
         return "Pairwise correlations:\n- " + "\n- ".join(bullets)
 
     def _summarize_models(self, models: Iterable[ModelSummary]) -> str:
-        bullets = [
-            f"{model.response} ~ {', '.join(model.predictors)} | R^2={model.r_squared:.3f}, adj R^2={model.adjusted_r_squared:.3f}"
-            for model in models
-        ]
+        bullets = []
+        for model in models:
+            predictors = ", ".join(model.predictors)
+            metrics = []
+            for name, value in model.metrics.items():
+                if value is None or (isinstance(value, float) and math.isnan(value)):
+                    continue
+                metrics.append(f"{name}={value:.3f}")
+            detail = ", ".join(metrics) if metrics else "no metrics"
+            bullets.append(f"{model.model_type}: {model.response} ~ {predictors} | {detail}")
         if not bullets:
             return "No multivariate models computed."
         return "Multivariate models:\n- " + "\n- ".join(bullets)

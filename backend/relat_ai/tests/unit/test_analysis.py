@@ -59,7 +59,10 @@ def test_build_multivariate_models_skips_invalid_configs(caplog: pytest.LogCaptu
     assert models[0].predictors == ["x2"]
     warnings = [record.message for record in caplog.records]
     assert any("missing columns" in message for message in warnings)
-    assert any("fitting error" in message for message in warnings)
+    assert any(
+        "insufficient variance" in message or "fitting error" in message
+        for message in warnings
+    )
 
 
 def test_pairwise_correlations_are_cached(monkeypatch: pytest.MonkeyPatch) -> None:

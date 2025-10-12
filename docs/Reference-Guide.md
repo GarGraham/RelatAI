@@ -34,9 +34,9 @@
 - `backend/relat_ai/services/registry_state.py`: Persistence and restoration helpers for dataset registry state with defensive error handling and validation.
 - `backend/relat_ai/services/schema_detection.py`: Dataset and column profiling utilities with logical type inference, statistics extraction, and consolidated computation helpers.
 - `backend/relat_ai/services/analysis/__init__.py`: Public interface for statistical pipelines.
-- `backend/relat_ai/services/analysis/pairwise.py`: Pairwise correlation computations (Pearson, Spearman, Kendall).
-- `backend/relat_ai/services/analysis/multivariate.py`: Regression-based multivariate modeling helpers.
-- `backend/relat_ai/services/analysis/utils.py`: Data structures for correlation and model outputs.
+- `backend/relat_ai/services/analysis/pairwise.py`: Configurable pairwise analysis engine supporting numeric (Pearson, Spearman, Kendall), mixed (ANOVA, point-biserial), and categorical (Chi-square, Cramér's V) statistics with caching and sampling controls.
+- `backend/relat_ai/services/analysis/multivariate.py`: Multivariate analysis pipeline providing regression plan expansion, ANOVA fitting, and partial correlation computation.
+- `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
 - `backend/relat_ai/utils/__init__.py`: Utility package exports for caching helpers.
@@ -47,6 +47,8 @@
 - `backend/relat_ai/tests/unit/test_health.py`: Validates health and configuration endpoints of the API.
 - `backend/relat_ai/tests/unit/test_ingestion.py`: Verifies upload persistence behaviors, size enforcement, and loader support for multiple formats.
 - `backend/relat_ai/tests/unit/test_schema_detection.py`: Exercises profiling heuristics and serialization to API models.
+- `backend/relat_ai/tests/unit/test_analysis_pairwise.py`: Validates pairwise analysis planning across numeric, categorical, and mixed methods.
+- `backend/relat_ai/tests/unit/test_analysis_multivariate.py`: Verifies regression plan expansion and combined regression/ANOVA/partial correlation execution.
 - `backend/relat_ai/tests/integration/test_datasets_api.py`: Integration coverage for dataset upload and retrieval endpoints.
 - `backend/relat_ai/tests/integration/__init__.py`: Integration test namespace marker.
 - `backend/scripts/benchmark.py`: CLI utility to benchmark correlation throughput on datasets.
