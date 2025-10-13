@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+import pytest
+
 from relat_ai.services.analysis import AutoTriageConfig, run_auto_triage
 
 
@@ -68,3 +70,22 @@ def test_auto_triage_pipeline_produces_expected_sections() -> None:
     )
 
     assert result.quality_flags is not None
+
+
+def test_auto_triage_rejects_empty_dataset() -> None:
+    frame = pd.DataFrame(columns=["timestamp", "metric_a", "metric_b", "metric_c"])
+    config = AutoTriageConfig(
+        numeric_columns=["metric_a", "metric_b", "metric_c"],
+        datetime_column="timestamp",
+    )
+
+    with pytest.raises(ValueError, match="empty dataset"):
+        run_auto_triage(frame, config)
+
+
+def test_auto_triage_config_validates_change_point_methods() -> None:
+    with pytest.raises(ValueError, match="Invalid change-point methods"):
+        AutoTriageConfig(
+            numeric_columns=["metric_a"],
+            change_point_methods=("cusum", "invalid"),
+        )
