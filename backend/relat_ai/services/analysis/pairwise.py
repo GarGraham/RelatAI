@@ -13,9 +13,12 @@ from pandas.api import types as ptypes
 from scipy import stats
 
 from relat_ai.services.analysis.utils import (
+    ANOVAExtras,
     AnalysisResult,
+    ChiSquareExtras,
     ColumnSemanticType,
     CorrelationRecord,
+    apply_sample_limit,
 )
 from relat_ai.utils.caching import CacheBackend, InMemoryCache
 
@@ -47,6 +50,18 @@ class PairwiseAnalysisPlan:
     sample_size_limit: int | None = 5000
     parallelism: int = 1
     random_state: int = 0
+
+    def __post_init__(self) -> None:
+        if self.min_samples < 2:
+            raise ValueError("min_samples must be at least 2 for pairwise analysis")
+        if self.max_categories < 2:
+            raise ValueError(
+                "max_categories must be at least 2 to compute categorical statistics"
+            )
+        if self.sample_size_limit is not None and self.sample_size_limit <= 0:
+            raise ValueError("sample_size_limit must be a positive integer or None")
+        if self.parallelism < 1:
+            raise ValueError("parallelism must be at least 1")
 
     def methods_for_pair(
         self, left: ColumnSemanticType, right: ColumnSemanticType
@@ -115,9 +130,15 @@ def compute_pairwise_correlations(
     """Compute pairwise relationships according to the configured plan."""
 
     plan = plan or PairwiseAnalysisPlan()
-    column_names = [name for name in columns if name in frame.columns]
+    requested_columns = list(dict.fromkeys(columns))
+    missing_columns = [name for name in requested_columns if name not in frame.columns]
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"Columns not found in frame: {missing}")
+
+    column_names = requested_columns
     if len(column_names) < 2:
-        return AnalysisResult(correlations=[])
+        raise ValueError("At least two columns are required to compute pairwise correlations")
 
     invalid_methods = _validate_plan(plan)
     if invalid_methods:
@@ -191,8 +212,9 @@ def _compute_pairwise_metrics(
     if len(subset.index) < plan.min_samples:
         return []
 
-    if plan.sample_size_limit and len(subset.index) > plan.sample_size_limit:
-        subset = subset.sample(plan.sample_size_limit, random_state=plan.random_state)
+    subset = apply_sample_limit(
+        subset, plan.sample_size_limit, random_state=plan.random_state
+    )
 
     type_a = _infer_semantic_type(frame[column_a])
     type_b = _infer_semantic_type(frame[column_b])
@@ -298,7 +320,10 @@ def _compute_mixed_pair(
                 sample_size=len(clean.index),
                 method="anova",
                 statistic=float(anova.statistic),
-                extras={"df_between": float(df_between), "df_within": float(df_within)},
+                extras=ANOVAExtras(
+                    df_between=float(df_between),
+                    df_within=float(df_within),
+                ),
             )
         )
 
@@ -341,7 +366,7 @@ def _compute_categorical_pair(
     p_value = float(chi_square[1])
     dof = float(chi_square[2])
     n = contingency.to_numpy().sum()
-    record_extras = {"dof": dof}
+    record_extras = ChiSquareExtras(degrees_of_freedom=dof)
 
     if "chi_square" in methods:
         results.append(
@@ -372,7 +397,10 @@ def _compute_categorical_pair(
                 sample_size=int(n),
                 method="cramers_v",
                 statistic=chi2_value,
-                extras={**record_extras, "chi_square": chi2_value},
+                extras=ChiSquareExtras(
+                    degrees_of_freedom=record_extras.degrees_of_freedom,
+                    chi_square=chi2_value,
+                ),
             )
         )
 
@@ -419,7 +447,9 @@ def _validate_plan(plan: PairwiseAnalysisPlan) -> set[str]:
 
 
 def _build_pairwise_cache_key(
-    dataset_id: str, columns: list[str], plan_signature: str
+    dataset_id: str, columns: Sequence[str], plan_signature: str
 ) -> str:
-    sorted_columns = ",".join(sorted(columns))
-    return f"{dataset_id}:{plan_signature}:{sorted_columns}"
+    unique_columns = sorted(set(columns))
+    pair_tokens = ["~".join(pair) for pair in combinations(unique_columns, 2)]
+    pairs_fragment = ",".join(pair_tokens)
+    return f"{dataset_id}:{plan_signature}:{pairs_fragment}"

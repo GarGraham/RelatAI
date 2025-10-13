@@ -17,9 +17,12 @@ from statsmodels.stats.anova import anova_lm
 from statsmodels.tools.sm_exceptions import PerfectSeparationError
 
 from relat_ai.services.analysis.utils import (
+    ANOVAMetrics,
     AnalysisResult,
     CorrelationRecord,
     ModelSummary,
+    RegressionMetrics,
+    apply_sample_limit,
 )
 
 
@@ -38,6 +41,16 @@ class RegressionConfig:
     min_variance: float = 1e-12
     random_state: int = 0
 
+    def __post_init__(self) -> None:
+        if not self.predictors:
+            raise ValueError("RegressionConfig requires at least one predictor")
+        if self.interaction_depth < 1:
+            raise ValueError("interaction_depth must be at least 1")
+        if self.sample_size_limit is not None and self.sample_size_limit <= 0:
+            raise ValueError("sample_size_limit must be a positive integer or None")
+        if self.min_variance < 0:
+            raise ValueError("min_variance must be non-negative")
+
 
 @dataclass(slots=True)
 class RegressionPlan:
@@ -52,6 +65,16 @@ class RegressionPlan:
     add_intercept: bool = True
     min_variance: float = 1e-12
     random_state: int = 0
+
+    def __post_init__(self) -> None:
+        if self.max_predictors < 1:
+            raise ValueError("max_predictors must be at least 1")
+        if self.interaction_depth < 1:
+            raise ValueError("interaction_depth must be at least 1")
+        if self.sample_size_limit is not None and self.sample_size_limit <= 0:
+            raise ValueError("sample_size_limit must be a positive integer or None")
+        if self.min_variance < 0:
+            raise ValueError("min_variance must be non-negative")
 
     def build_configs(self) -> list[RegressionConfig]:
         """Expand the declarative plan into explicit regression configs."""
@@ -108,6 +131,11 @@ class ANOVAConfig:
     response: str
     factor: str
     sample_size_limit: int | None = None
+    random_state: int = 0
+
+    def __post_init__(self) -> None:
+        if self.sample_size_limit is not None and self.sample_size_limit <= 0:
+            raise ValueError("sample_size_limit must be a positive integer or None")
 
 
 @dataclass(slots=True)
@@ -119,6 +147,14 @@ class PartialCorrelationRequest:
     controls: Sequence[str]
     sample_size_limit: int | None = None
     random_state: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.candidates:
+            raise ValueError("PartialCorrelationRequest requires at least one candidate")
+        if self.sample_size_limit is not None and self.sample_size_limit <= 0:
+            raise ValueError("sample_size_limit must be a positive integer or None")
+        if self.target in self.controls:
+            raise ValueError("target column cannot be part of the control set")
 
 
 def build_multivariate_models(
@@ -175,8 +211,9 @@ def _fit_regressions(
             continue
 
         design = frame.loc[:, required_columns].dropna()
-        if config.sample_size_limit and len(design.index) > config.sample_size_limit:
-            design = design.sample(config.sample_size_limit, random_state=config.random_state)
+        design = apply_sample_limit(
+            design, config.sample_size_limit, random_state=config.random_state
+        )
         if design.empty:
             continue
 
@@ -215,12 +252,12 @@ def _fit_regressions(
                 response=config.response,
                 predictors=list(config.predictors),
                 model_type="regression",
-                metrics={
-                    "r_squared": float(model.rsquared),
-                    "adjusted_r_squared": float(model.rsquared_adj),
-                    "aic": float(model.aic),
-                    "bic": float(model.bic),
-                },
+                metrics=RegressionMetrics(
+                    r_squared=float(model.rsquared),
+                    adjusted_r_squared=float(model.rsquared_adj),
+                    aic=float(model.aic),
+                    bic=float(model.bic),
+                ),
                 sample_size=len(design.index),
             )
         )
@@ -244,8 +281,9 @@ def _fit_anova_models(
             continue
 
         design = frame.loc[:, required_columns].dropna()
-        if config.sample_size_limit and len(design.index) > config.sample_size_limit:
-            design = design.sample(config.sample_size_limit, random_state=0)
+        design = apply_sample_limit(
+            design, config.sample_size_limit, random_state=config.random_state
+        )
         if design.empty:
             continue
 
@@ -274,12 +312,12 @@ def _fit_anova_models(
                 response=config.response,
                 predictors=[config.factor],
                 model_type="anova",
-                metrics={
-                    "f_statistic": float(row.get("F", np.nan)),
-                    "p_value": float(row.get("PR(>F)", np.nan)),
-                    "df_factor": float(row.get("df", np.nan)),
-                    "df_residual": float(residual.get("df", np.nan)),
-                },
+                metrics=ANOVAMetrics(
+                    f_statistic=float(row.get("F", np.nan)),
+                    p_value=float(row.get("PR(>F)", np.nan)),
+                    df_factor=float(row.get("df", np.nan)),
+                    df_residual=float(residual.get("df", np.nan)),
+                ),
                 sample_size=len(design.index),
             )
         )
@@ -304,8 +342,9 @@ def _compute_partial_correlations(
             continue
 
         design = frame.loc[:, required].dropna()
-        if request.sample_size_limit and len(design.index) > request.sample_size_limit:
-            design = design.sample(request.sample_size_limit, random_state=request.random_state)
+        design = apply_sample_limit(
+            design, request.sample_size_limit, random_state=request.random_state
+        )
         if design.empty:
             continue
 
@@ -315,6 +354,15 @@ def _compute_partial_correlations(
         else:
             target_residual = design[request.target]
             candidate_residual = design[candidate]
+
+        sample_size = len(target_residual.index)
+        if sample_size < 2:
+            LOGGER.warning(
+                "Skipping partial correlation for '%s' due to insufficient samples (%d)",
+                candidate,
+                sample_size,
+            )
+            continue
 
         correlation = stats.pearsonr(target_residual, candidate_residual)
         coefficient = float(
@@ -328,7 +376,7 @@ def _compute_partial_correlations(
                 variables=(request.target, candidate),
                 coefficient=coefficient,
                 p_value=p_value,
-                sample_size=len(target_residual.index),
+                sample_size=sample_size,
                 method="partial_correlation",
             )
         )
