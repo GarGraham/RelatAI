@@ -1,62 +1,92 @@
-Technical Specification
-1. Architecture
-Frontend:
+⚙️ Technical Specification
+5.1 Architecture
+Layer	Technology	Notes
+Frontend	Streamlit (prototype) → React / Dash (production)	Column selector, filter panel, mode toggle
+Backend	Python (FastAPI / Flask)	Modular analysis engine
+Core Libraries	pandas, numpy, scipy, scikit-learn, pingouin, statsmodels	
+Visualization	seaborn, plotly, networkx	Interactive + static outputs
+AI Summarization	LLM pass over structured results	Uses contextual prompt templates
+5.2 Data Flow
+Upload → Preprocessing → Filter / Subset → Analysis Engine
+       → Result JSON → Visualization Layer → AI Summary → Export
 
-Streamlit (prototype) → React/Dash (production).
+5.3 Preprocessing
 
-Column selector, filter panel, mode toggle.
+Missing-value handling (imputation / drop).
 
-Backend:
+Outlier handling (robust scaling, IQR trimming).
 
-Python (FastAPI/Flask).
+Encoding of categorical variables (one-hot / hash).
 
-Core libraries: pandas, numpy, scipy, scikit-learn, pingouin.
+Normalization / standardization as needed.
 
-Optional: statsmodels for regression/ANOVA.
+Audit logging of all preprocessing actions.
 
-Visualization:
+5.4 Analysis Engine
+Correlation
 
-seaborn, plotly, networkx.
+Numeric↔Numeric → Pearson, Spearman, Kendall.
 
-AI Summarization:
+Categorical↔Categorical → Chi-square, Cramér’s V.
 
-LLM pass over results table to generate human‑readable insights.
+Mixed → ANOVA, Point-Biserial.
 
-2. Data Flow
-User uploads dataset → schema detection.
+Multivariate
 
-User configures analysis (mode, filters, anchors).
-
-Backend runs correlation/multivariate engine.
-
-Results stored in structured JSON.
-
-Frontend renders tables/plots.
-
-AI summarizer generates narrative insights.
-
-3. Correlation Engine
-Pairwise:
-
-Numeric↔Numeric: Pearson, Spearman, Kendall.
-
-Categorical↔Categorical: Chi‑square, Cramér’s V.
-
-Mixed: ANOVA, point‑biserial.
-
-Multivariate:
-
-Regression with interaction terms.
+Linear / Logistic Regression with interaction terms.
 
 ANOVA for categorical predictors.
 
-Partial correlations.
+Partial Correlations.
+
+Partial Least Squares (PLS) for collinear predictors.
 
 Configurable max interaction depth.
 
-4. Performance Optimizations
-Pre‑filter features using mutual information.
+Auto-Triage
 
-Parallelize computations (joblib, Dask).
+PCA loadings for variance drivers.
+
+Change-point detection (CUSUM, PELT) for time-indexed variables.
+
+Clustering (K-Means / Hierarchical) for unsupervised structure discovery.
+
+Residual forensics & suspicion ranking of variables / time windows.
+
+Confidence and quality flag assignment.
+
+5.5 Outputs
+
+Structured JSON (results: coefficients, effect sizes, p-values, n, flags).
+
+Ranked Insights List.
+
+Visualizations (heatmaps, networks, PCA, change-point plots).
+
+AI-generated narrative summary with confidence references.
+
+Optional Reduced Dataset Export for downstream analysis (JMP, Python, etc.).
+
+5.6 Performance Optimizations
+
+Pre-filter features using mutual information and variance.
+
+Parallelize independent computations (joblib, Dask).
 
 Cap subset size in multivariate mode.
+
+Sampling for very large datasets.
+
+Utilize multi-threaded BLAS (MKL / OpenBLAS).
+
+Cache standardized matrices and PCA transforms by (dataset hash + filter signature).
+
+📊 Appendix A – Module Summary
+Module	Inputs	Outputs	Libraries	Est. Runtime	Notes
+Correlation	DataFrame	corr_table.json	scipy / pingouin	< 5 s	pairwise only
+Multivariate	X, y	model.json	scikit-learn / statsmodels	< 60 s	≤ 5 vars
+Auto-Triage	full DataFrame	ranked.json	scikit-learn / ruptures	< 90 s	capped @ 50 k × 50
+Visualization	result JSON	plots / HTML report	plotly / seaborn	< 10 s	cached outputs
+AI Summary	result JSON	markdown / text	LLM API	< 5 s	optional, local/offline toggle
+
+Version: 2.1  Last Updated: 2025-10-13  Author: Gareth

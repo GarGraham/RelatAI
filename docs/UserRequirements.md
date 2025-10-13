@@ -1,37 +1,48 @@
+📄 User Requirements Document (URD v2.1)
 1. Purpose
-Provide a self‑service platform for automated correlation and multivariate analysis of tabular datasets. The tool should allow non‑specialists and analysts alike to quickly surface relationships between variables without manually coding statistical tests.
+
+Provide a self-service triage platform to rapidly surface statistical drivers during quality events and CAPA investigations.
+The system accelerates root-cause analysis by automating correlation discovery, multivariate modeling, and anomaly triage, allowing engineers to isolate probable causes and prioritize deeper statistical work.
 
 2. Users
-Data analysts: want fast exploratory insights.
 
-Domain experts: want to test hypotheses without deep statistical coding.
+Quality / Process Engineers – need rapid triage during investigations.
 
-Executives/researchers: want AI‑summarized insights, not raw stats.
+Data Analysts – want systematic, reproducible exploratory data analysis (EDA).
+
+Domain Experts / Managers – want AI-summarized insights, not raw statistics.
 
 3. Functional Requirements
-Data Input
+3.1 Data Input
 
-Upload CSV/Parquet/Excel.
+Upload CSV / Excel / Parquet datasets.
 
-Auto‑detect column types (numeric, categorical, datetime, text).
+Auto-detect column types (numeric, categorical, datetime, text).
 
-UI Controls
+Handle missing values and outliers gracefully.
 
-All columns included by default.
+Audit Trail: log all preprocessing actions (dropped columns, imputations, scaling methods, filters) with timestamps and dataset hash for traceability.
 
-User can deselect columns.
+3.2 UI Controls
 
-Option to filter dataset by column values (e.g., only rows where Region = Europe).
+All columns included by default; user may deselect.
 
-Analysis Modes
+Filtering panel to subset by column values (e.g., Region = Europe).
 
-Correlational mode:
+Mode toggle: Correlation | Multivariate | Auto-Triage.
 
-No column limit.
+Option to save/load analysis templates (column selections, filters, anchors, parameters) for repeatable workflows.
+
+3.3 Analysis Modes
+A. Correlation Mode
 
 Pairwise correlations across all selected columns.
 
-Multivariate mode:
+No column limit.
+
+Supports numeric↔numeric, categorical↔categorical, and mixed variable types.
+
+B. Multivariate Mode
 
 User sets max number of variables (e.g., 3–5).
 
@@ -39,25 +50,48 @@ User sets max interaction depth (default = 2).
 
 Option to anchor variables (always included).
 
-Outputs
+Linear / logistic regression, ANOVA, partial correlations, and PLS (Partial Least Squares) for collinear predictors.
 
-Ranked correlation tables.
+C. Auto-Triage Mode
 
-Heatmaps, network graphs, faceted plots.
+Unsupervised scan combining correlations, PCA loadings, clustering, and change-point detection.
 
-AI‑generated summaries of strongest/most surprising relationships.
+Ranks variables and time windows most associated with anomalies.
 
-Performance
+Residual Forensics: buckets residuals by instrument, lot, operator, analyte, or time to identify systematic bias.
 
-Handle datasets up to ~50k rows, dozens of columns.
+Produces a Suspicion Ranking (top contributors and anomaly segments).
 
-Run within seconds to minutes depending on complexity.
+Optional future extensions: t-SNE / UMAP dimensionality reduction and anomaly detection via Isolation Forest or One-Class SVM.
 
-4. Non‑Functional Requirements
-Usability: Simple UI with defaults that “just work.”
+3.4 Outputs
 
-Extensibility: Modular backend for plugging in new statistical tests.
+Ranked Correlation Tables (r, p-value, n).
 
-Interpretability: Clear explanations of what each test means.
+Multivariate Model Summaries (coefficients, effect sizes, interactions).
 
-Scalability: Should degrade gracefully with larger datasets (sampling, pruning).
+Ranked Insights
+
+Top contributing variables by variance explained.
+
+Change-point detections (if time field exists).
+
+Optional reduced dataset export (top-N variables).
+
+Visualizations: heatmaps, network graphs, faceted plots, PCA biplots, change-point charts.
+
+Insights Layer: AI-generated summaries with confidence references (e.g., “Based on 8 k samples, R² = 0.82”) and links back to plots/tables.
+
+Confidence Flags: each finding labeled with quality indicators (low n, collinearity, high missingness).
+
+4. Non-Functional Requirements
+
+Interpretability: each relationship includes strength (r or β), significance (p-value / CI), and sample size (n).
+
+Usability: sensible defaults that “just work.”
+
+Extensibility: modular backend for additional statistical tests or models.
+
+Scalability: handle ≈ 50 k rows × dozens of columns; degrade gracefully via sampling/pruning.
+
+Security / Compliance: processing is local or on-prem by default; no external data transmission unless explicitly enabled for AI summarization.

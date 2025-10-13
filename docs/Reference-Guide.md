@@ -8,11 +8,13 @@
 
 ## Documentation (`docs/`)
 - `docs/agents.md`: Contribution guidelines covering reviews, planning expectations, and commit conventions.
-- `docs/ImplementationPlan.md`: Detailed implementation roadmap, milestone descriptions, and repository structure blueprint.
+- `docs/BUG_FIX_ASSESSMENT.md`: Assessment of bug fixes and refactoring completion from initial repository review.
+- `docs/ImplementationPlan.md`: Detailed implementation roadmap (v2.1), milestone descriptions, repository structure blueprint. Updated to align with UserRequirements v2.1 and TechnicalSpecification v2.1, includes Auto-Triage mode, audit trail system, confidence flags, template management, and performance targets.
+- `docs/MILESTONE3_REVIEW.md`: Comprehensive review of Milestone 3 (Backend Analysis Engine) identifying bugs, refactoring opportunities, and progress assessment.
 - `docs/Reference-Guide.md`: This reference document mapping repository files to their purpose.
 - `docs/REPO_REVIEW.md`: Comprehensive repository review identifying bugs, refactoring opportunities, and capability assessment against intended use-case.
-- `docs/TechnicalSpecification.md`: Architectural design, statistical methods, and performance constraints.
-- `docs/UserRequirements.md`: Personas, functional requirements, and experience goals for the analytics platform.
+- `docs/TechnicalSpecification.md`: Architectural design (v2.1), statistical methods (including PLS, change-point detection, residual forensics), and performance constraints with explicit runtime targets.
+- `docs/UserRequirements.md`: Personas, functional requirements (v2.1), and experience goals for the analytics platform. Includes three analysis modes (Correlation, Multivariate, Auto-Triage), audit trail, confidence flags, and template management.
 
 ## Backend (`backend/`)
 - `backend/README.md`: Backend-specific setup steps, layout explanation, and run commands.
