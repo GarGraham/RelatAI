@@ -93,11 +93,13 @@ This update synchronizes the Implementation Plan with significant enhancements t
    - Implemented multivariate module with configurable max variables, anchor handling, and interaction depth (regression, ANOVA, partial correlations).
    - Added performance optimizations (feature pre-filtering via mutual information, parallel execution, sampling safeguards, caching).
 
-4. **Audit Trail & Preprocessing Transparency**
-   - Implement comprehensive logging of all preprocessing actions (dropped columns, imputations, scaling methods, filters).
-   - Include timestamps and dataset hash for traceability and compliance.
-   - Expose audit log via API for review and export.
-   - Add missing value and outlier handling with configurable strategies (imputation, IQR trimming, robust scaling).
+4. **Audit Trail & Preprocessing Transparency** *(Completed)*
+   - Implemented comprehensive logging of all preprocessing actions (dropped columns, imputations, scaling methods, filters).
+   - Included timestamps and dataset hash for traceability and compliance.
+   - Exposed audit log via REST API for review and export.
+   - Added missing value and outlier handling with configurable strategies (imputation, IQR trimming, robust scaling).
+   - Created thread-safe in-memory audit store with action recording.
+   - Integrated preprocessing pipeline with dataset ingestion workflow.
 
 5. **Backend Analysis Engine - Auto-Triage Mode**
    - Implement unsupervised analysis pipeline combining:
@@ -360,12 +362,14 @@ When performance targets cannot be met:
 - [x] Schema detection and profiling service
 - [x] Correlation mode analysis engine (Pearson, Spearman, Kendall, Chi-square, Cramér's V, ANOVA, point-biserial)
 - [x] Multivariate mode analysis engine (regression, ANOVA, partial correlations)
+- [x] Audit trail system with preprocessing action logging
+- [x] Preprocessing pipeline (imputation, outlier clipping, robust scaling)
+- [x] Audit trail REST API endpoints
+- [x] Result caching with intelligent key generation
 - [ ] Partial Least Squares (PLS) implementation
 - [ ] Auto-Triage mode analysis engine (PCA, change-point detection, clustering, residual forensics)
-- [ ] Audit trail system with preprocessing action logging
 - [ ] Confidence flag assignment across all analysis modes
 - [ ] Template save/load functionality for repeatable workflows
-- [ ] Result caching with intelligent key generation
 - [ ] Reduced dataset export (top-N variables)
 
 ### Frontend
@@ -393,9 +397,11 @@ When performance targets cannot be met:
 ### Testing & Quality
 - [x] Unit tests for ingestion and schema detection
 - [x] Unit tests for correlation and multivariate analysis
-- [ ] Unit tests for Auto-Triage mode
-- [ ] Unit tests for audit trail and confidence flags
+- [x] Unit tests for preprocessing and audit trail
 - [x] Integration tests for dataset API
+- [x] Integration tests for audit trail API
+- [ ] Unit tests for Auto-Triage mode
+- [ ] Unit tests for confidence flags
 - [ ] Integration tests for all analysis modes
 - [ ] Performance benchmarks validating runtime targets:
   - [ ] Correlation: < 5s
@@ -410,6 +416,9 @@ When performance targets cannot be met:
 - [x] Technical Specification (v2.1)
 - [x] Implementation Plan (this document, updated)
 - [x] Reference Guide (codebase map)
+- [x] Milestone 3 Review (Backend Analysis Engine)
+- [x] Milestone 4 Review (Audit Trail & Preprocessing)
+- [x] .env.example with preprocessing configuration
 - [ ] User-facing documentation:
   - [ ] Workflow guides for each analysis mode
   - [ ] Statistical interpretation guidance

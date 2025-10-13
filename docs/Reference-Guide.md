@@ -11,6 +11,12 @@
 - `docs/BUG_FIX_ASSESSMENT.md`: Assessment of bug fixes and refactoring completion from initial repository review.
 - `docs/ImplementationPlan.md`: Detailed implementation roadmap (v2.1), milestone descriptions, repository structure blueprint. Updated to align with UserRequirements v2.1 and TechnicalSpecification v2.1, includes Auto-Triage mode, audit trail system, confidence flags, template management, and performance targets.
 - `docs/MILESTONE3_REVIEW.md`: Comprehensive review of Milestone 3 (Backend Analysis Engine) identifying bugs, refactoring opportunities, and progress assessment.
+- `docs/MILESTONE4_REVIEW.md`: Comprehensive review of Milestone 4 (Audit Trail & Preprocessing Transparency) identifying bugs, refactoring opportunities, documentation gaps, and completion assessment.
+- `docs/MILESTONE4_SUMMARY.md`: Quick reference summary for Milestone 4 completion with actionable immediate, short-term, and future items.
+- `docs/MILESTONE4_COMPLETION_REPORT.md`: Final completion report documenting all deliverables, testing, documentation, bug fixes, and success criteria met for Milestone 4.
+- `docs/AuditTrail_UserGuide.md`: User-facing documentation for audit trail interpretation, API usage, action types reference, use cases, and troubleshooting.
+- `docs/Preprocessing_DeveloperGuide.md`: Developer guide for extending preprocessing system, architecture overview, adding new strategies/transformations, testing patterns, and best practices.
+- `docs/FutureEnhancements.md`: Backlog of stretch goals and nice-to-have features including advanced imputation, audit persistence, user tracking, feature engineering, and ML integrations.
 - `docs/Reference-Guide.md`: This reference document mapping repository files to their purpose.
 - `docs/REPO_REVIEW.md`: Comprehensive repository review identifying bugs, refactoring opportunities, and capability assessment against intended use-case.
 - `docs/TechnicalSpecification.md`: Architectural design (v2.1), statistical methods (including PLS, change-point detection, residual forensics), and performance constraints with explicit runtime targets.

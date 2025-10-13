@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Any
 
@@ -17,7 +17,7 @@ class AuditAction:
     action_type: str
     details: dict[str, Any]
     column: str | None = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_model(self) -> AuditActionModel:
         """Convert the action into an API response model."""
@@ -39,7 +39,7 @@ class AuditLog:
     dataset_hash: str
     row_count: int
     column_count: int
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     actions: list[AuditAction] = field(default_factory=list)
 
     def add_action(self, action: AuditAction) -> None:
