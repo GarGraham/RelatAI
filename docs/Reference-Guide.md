@@ -14,6 +14,8 @@
 - `docs/MILESTONE4_REVIEW.md`: Comprehensive review of Milestone 4 (Audit Trail & Preprocessing Transparency) identifying bugs, refactoring opportunities, documentation gaps, and completion assessment.
 - `docs/MILESTONE4_SUMMARY.md`: Quick reference summary for Milestone 4 completion with actionable immediate, short-term, and future items.
 - `docs/MILESTONE4_COMPLETION_REPORT.md`: Final completion report documenting all deliverables, testing, documentation, bug fixes, and success criteria met for Milestone 4.
+- `docs/MILESTONE5_REVIEW.md`: Comprehensive review of Milestone 5 (Auto-Triage Mode) identifying 3 bugs (1 critical index alignment issue), refactoring opportunities, missing components (API routes, integration tests), and holistic repository status assessment.
+- `docs/MILESTONE5_SUMMARY.md`: Executive summary for Milestone 5 review with quick status, critical findings, immediate action items, and strategic recommendations.
 - `docs/AuditTrail_UserGuide.md`: User-facing documentation for audit trail interpretation, API usage, action types reference, use cases, and troubleshooting.
 - `docs/Preprocessing_DeveloperGuide.md`: Developer guide for extending preprocessing system, architecture overview, adding new strategies/transformations, testing patterns, and best practices.
 - `docs/FutureEnhancements.md`: Backlog of stretch goals and nice-to-have features including advanced imputation, audit persistence, user tracking, feature engineering, and ML integrations.
@@ -45,6 +47,7 @@
 - `backend/relat_ai/services/analysis/__init__.py`: Public interface for statistical pipelines.
 - `backend/relat_ai/services/analysis/pairwise.py`: Configurable pairwise analysis engine supporting numeric (Pearson, Spearman, Kendall), mixed (ANOVA, point-biserial), and categorical (Chi-square, Cramér's V) statistics with caching and sampling controls.
 - `backend/relat_ai/services/analysis/multivariate.py`: Multivariate analysis pipeline providing regression plan expansion, ANOVA fitting, and partial correlation computation.
+- `backend/relat_ai/services/analysis/auto_triage.py`: Auto-triage analysis pipeline combining PCA loadings, change-point detection (CUSUM, PELT algorithms), clustering (K-Means, Hierarchical), residual forensics, and suspicion ranking for unsupervised anomaly triage during quality events.
 - `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
@@ -61,6 +64,7 @@
 - `backend/relat_ai/tests/unit/test_preprocessing.py`: Validates preprocessing strategies and audit logging integration.
 - `backend/relat_ai/tests/unit/test_analysis_pairwise.py`: Validates pairwise analysis planning across numeric, categorical, and mixed methods.
 - `backend/relat_ai/tests/unit/test_analysis_multivariate.py`: Verifies regression plan expansion and combined regression/ANOVA/partial correlation execution.
+- `backend/relat_ai/tests/unit/test_analysis_auto_triage.py`: Unit tests for auto-triage pipeline validating PCA components, change-point detection (CUSUM, PELT), clustering, residual forensics, and suspicion rankings.
 - `backend/relat_ai/tests/integration/test_datasets_api.py`: Integration coverage for dataset upload and retrieval endpoints.
 - `backend/relat_ai/tests/integration/test_audit_api.py`: Validates audit trail API responses after dataset ingestion.
 - `backend/relat_ai/tests/integration/__init__.py`: Integration test namespace marker.
