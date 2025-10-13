@@ -18,6 +18,14 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from relat_ai.services.analysis.utils import apply_sample_limit
+from relat_ai.services.analysis.change_detection import (
+    detect_cusum_change_points,
+    detect_pelt_change_points,
+)
+from relat_ai.services.analysis.confidence_flags import (
+    QualityFlag,
+    build_quality_flags,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -80,15 +88,6 @@ class SuspicionScore:
 
 
 @dataclass(slots=True)
-class QualityFlag:
-    """Confidence or data-quality indicator surfaced during the run."""
-
-    code: str
-    message: str
-    severity: str
-
-
-@dataclass(slots=True)
 class AutoTriageResult:
     """Aggregate payload returned by :func:`run_auto_triage`."""
 
@@ -120,6 +119,8 @@ class AutoTriageConfig:
     high_collinearity_threshold: float = 0.95
     random_state: int = 0
 
+    VALID_CHANGE_POINT_METHODS = frozenset({"cusum", "pelt"})
+
     def __post_init__(self) -> None:
         if not self.numeric_columns:
             raise ValueError("AutoTriageConfig requires at least one numeric column")
@@ -142,6 +143,17 @@ class AutoTriageConfig:
         if self.high_collinearity_threshold <= 0 or self.high_collinearity_threshold > 1:
             raise ValueError("high_collinearity_threshold must be within (0, 1]")
 
+        invalid_methods = [
+            method for method in self.change_point_methods if method not in self.VALID_CHANGE_POINT_METHODS
+        ]
+        if invalid_methods:
+            raise ValueError(
+                "Invalid change-point methods: "
+                + ", ".join(invalid_methods)
+                + ". Supported methods: "
+                + ", ".join(sorted(self.VALID_CHANGE_POINT_METHODS))
+            )
+
 
 def run_auto_triage(frame: pd.DataFrame, config: AutoTriageConfig) -> AutoTriageResult:
     """Execute the auto-triage workflow on the provided dataset.
@@ -157,6 +169,9 @@ def run_auto_triage(frame: pd.DataFrame, config: AutoTriageConfig) -> AutoTriage
     """
 
     _validate_required_columns(frame, config)
+
+    if len(frame.index) == 0:
+        raise ValueError("Cannot perform auto-triage on an empty dataset")
 
     working_frame = frame.copy()
     if config.datetime_column:
@@ -184,7 +199,7 @@ def run_auto_triage(frame: pd.DataFrame, config: AutoTriageConfig) -> AutoTriage
         residual_insights,
         config,
     )
-    quality_flags = _build_quality_flags(
+    quality_flags = build_quality_flags(
         working_frame,
         numeric_data,
         imputation_flags,
@@ -299,9 +314,9 @@ def _detect_change_points(
         series = numeric_data[column]
         for method in config.change_point_methods:
             if method == "cusum":
-                locations = _cusum(series)
+                locations = detect_cusum_change_points(series)
             elif method == "pelt":
-                locations = _pelt(series)
+                locations = detect_pelt_change_points(series)
             else:
                 continue
             if not locations:
@@ -315,80 +330,29 @@ def _detect_change_points(
             )
     return change_points
 
+def _apply_clustering_method(
+    numeric_data: pd.DataFrame,
+    method_name: str,
+    n_clusters: int,
+    sample_size: int,
+    random_state: int | None = None,
+) -> ClusterInsight | None:
+    """Apply a clustering method and return insight."""
 
-def _cusum(series: pd.Series) -> list[int]:
-    """CUSUM implementation detecting mean shifts in a 1D series."""
+    adjusted_clusters = min(n_clusters, sample_size)
+    if adjusted_clusters <= 1:
+        return None
 
-    values = series.to_numpy()
-    if values.size < 5:
-        return []
-    mean = values.mean()
-    std = values.std(ddof=0)
-    threshold = 5 * std if std > 0 else 0.0
-    if threshold == 0.0:
-        return []
+    if method_name == "kmeans":
+        model = KMeans(n_clusters=adjusted_clusters, random_state=random_state, n_init=10)
+    elif method_name == "hierarchical":
+        # Agglomerative clustering with ward linkage is deterministic and does not expose random_state.
+        model = AgglomerativeClustering(n_clusters=adjusted_clusters)
+    else:
+        return None
 
-    s_pos = 0.0
-    s_neg = 0.0
-    locations: list[int] = []
-    for index, value in enumerate(values):
-        deviation = value - mean
-        s_pos = max(0.0, s_pos + deviation)
-        s_neg = min(0.0, s_neg + deviation)
-        if s_pos > threshold or abs(s_neg) > threshold:
-            locations.append(index)
-            s_pos = 0.0
-            s_neg = 0.0
-    return locations
-
-
-def _pelt(series: pd.Series) -> list[int]:
-    """Simplified PELT algorithm for detecting mean shifts."""
-
-    values = series.to_numpy()
-    n = len(values)
-    if n < 5:
-        return []
-
-    penalty = 3.0 * np.log(n)
-    cumulative_sum = np.cumsum(np.insert(values, 0, 0.0))
-    cumulative_sum_sq = np.cumsum(np.insert(values ** 2, 0, 0.0))
-
-    def cost(start: int, end: int) -> float:
-        length = end - start
-        if length <= 1:
-            return 0.0
-        segment_sum = cumulative_sum[end] - cumulative_sum[start]
-        segment_sq_sum = cumulative_sum_sq[end] - cumulative_sum_sq[start]
-        mean = segment_sum / length
-        return segment_sq_sum - 2 * mean * segment_sum + length * mean**2
-
-    best_cost = np.zeros(n + 1)
-    best_cost[0] = -penalty
-    change_points: list[list[int]] = [[] for _ in range(n + 1)]
-    candidate_indices = [0]
-
-    for end in range(1, n + 1):
-        scores = []
-        for start in candidate_indices:
-            score = best_cost[start] + cost(start, end) + penalty
-            scores.append((score, start))
-        best_score, best_start = min(scores, key=lambda item: item[0])
-        best_cost[end] = best_score
-        change_points[end] = change_points[best_start] + [best_start]
-        candidate_indices = [
-            start
-            for _, start in scores
-            if best_cost[start] + cost(start, end) <= best_score + penalty
-        ]
-
-    final_points = [point for point in change_points[n] if point not in (0, n)]
-    return final_points
-
-
-# ---------------------------------------------------------------------------
-# Clustering
-# ---------------------------------------------------------------------------
+    labels = model.fit_predict(numeric_data)
+    return ClusterInsight(method=method_name, cluster_sizes=_count_labels(labels))
 
 
 def _perform_clustering(
@@ -401,27 +365,22 @@ def _perform_clustering(
     if sample_size == 0:
         return results
 
-    kmeans_clusters = min(config.kmeans_clusters, sample_size)
-    if kmeans_clusters > 1:
-        kmeans = KMeans(n_clusters=kmeans_clusters, random_state=config.random_state, n_init=10)
-        labels = kmeans.fit_predict(numeric_data)
-        results.append(
-            ClusterInsight(
-                method="kmeans",
-                cluster_sizes=_count_labels(labels),
-            )
-        )
+    if insight := _apply_clustering_method(
+        numeric_data,
+        "kmeans",
+        config.kmeans_clusters,
+        sample_size,
+        config.random_state,
+    ):
+        results.append(insight)
 
-    hierarchical_clusters = min(config.hierarchical_clusters, sample_size)
-    if hierarchical_clusters > 1:
-        model = AgglomerativeClustering(n_clusters=hierarchical_clusters)
-        labels = model.fit_predict(numeric_data)
-        results.append(
-            ClusterInsight(
-                method="hierarchical",
-                cluster_sizes=_count_labels(labels),
-            )
-        )
+    if insight := _apply_clustering_method(
+        numeric_data,
+        "hierarchical",
+        config.hierarchical_clusters,
+        sample_size,
+    ):
+        results.append(insight)
 
     return results
 
@@ -448,21 +407,25 @@ def _compute_residual_forensics(
     insights: list[ResidualForensicsInsight] = []
     baseline = numeric_data.mean(axis=0)
 
+    working_frame = frame.copy()
     grouping_columns = list(config.categorical_columns)
     if config.datetime_column:
-        time_windows = frame[config.datetime_column].dt.to_period("D").astype(str)
-        frame = frame.assign(_auto_triage_window=time_windows)
+        time_windows = working_frame[config.datetime_column].dt.to_period("D").astype(str)
+        working_frame = working_frame.assign(_auto_triage_window=time_windows)
         grouping_columns.append("_auto_triage_window")
 
     for column in grouping_columns:
-        if column not in frame.columns:
+        if column not in working_frame.columns:
             continue
-        valid_rows = frame[column].notna()
+        valid_rows = working_frame[column].notna()
         if not valid_rows.any():
             continue
         buckets = []
-        for bucket_value, group in frame.loc[valid_rows].groupby(column):
-            matched_numeric = numeric_data.loc[group.index]
+        for bucket_value, group in working_frame.loc[valid_rows].groupby(column):
+            valid_indices = group.index.intersection(numeric_data.index)
+            if len(valid_indices) == 0:
+                continue
+            matched_numeric = numeric_data.loc[valid_indices]
             residual_frame = (matched_numeric - baseline).abs()
             column_residuals = residual_frame.mean(axis=0).to_dict()
             residual = residual_frame.mean(axis=1)
@@ -470,7 +433,7 @@ def _compute_residual_forensics(
                 ResidualBucket(
                     label=str(bucket_value),
                     average_residual=float(residual.mean()),
-                    sample_size=int(len(group.index)),
+                    sample_size=int(len(valid_indices)),
                     column_residuals={key: float(value) for key, value in column_residuals.items()},
                 )
             )
@@ -488,6 +451,12 @@ def _compute_residual_forensics(
 # ---------------------------------------------------------------------------
 # Suspicion scoring
 # ---------------------------------------------------------------------------
+
+
+def _suspicion_score_key(entry: SuspicionScore) -> float:
+    """Sort key for suspicion scores (higher is more suspicious)."""
+
+    return entry.score
 
 
 def _score_suspicion(
@@ -538,7 +507,7 @@ def _score_suspicion(
             )
         )
 
-    suspicion_entries.sort(key=lambda item: item.score, reverse=True)
+    suspicion_entries.sort(key=_suspicion_score_key, reverse=True)
     suspicion_entries = suspicion_entries[: config.suspicion_top_k]
 
     if config.datetime_column:
@@ -577,74 +546,8 @@ def _score_time_windows(
                 drivers=("multiple change points",),
             )
         )
-    scored.sort(key=lambda item: item.score, reverse=True)
+    scored.sort(key=_suspicion_score_key, reverse=True)
     return scored[: config.suspicion_top_k]
-
-
-# ---------------------------------------------------------------------------
-# Quality flags
-# ---------------------------------------------------------------------------
-
-
-def _build_quality_flags(
-    frame: pd.DataFrame,
-    numeric_data: pd.DataFrame,
-    missing_ratio: dict[str, float],
-    change_points: Sequence[ChangePointInsight],
-    config: AutoTriageConfig,
-) -> list[QualityFlag]:
-    """Create confidence warnings based on dataset heuristics."""
-
-    flags: list[QualityFlag] = []
-
-    sample_size = len(frame.index)
-    if sample_size < config.min_sample_warning:
-        flags.append(
-            QualityFlag(
-                code="low_sample_size",
-                message=(
-                    "Fewer than %d records were available; findings may be unstable." % config.min_sample_warning
-                ),
-                severity="warning",
-            )
-        )
-
-    for column, ratio in missing_ratio.items():
-        if ratio >= config.high_missing_threshold:
-            flags.append(
-                QualityFlag(
-                    code=f"missing_{column}",
-                    message=(
-                        f"Column '{column}' had {ratio:.0%} missing values; interpretations require caution."
-                    ),
-                    severity="warning",
-                )
-            )
-
-    correlation_matrix = numeric_data.corr().abs()
-    np.fill_diagonal(correlation_matrix.values, 0)
-    max_corr = correlation_matrix.max().max()
-    if max_corr >= config.high_collinearity_threshold:
-        flags.append(
-            QualityFlag(
-                code="collinearity",
-                message=(
-                    "Strong collinearity detected between numeric columns; PCA components may overlap drivers."
-                ),
-                severity="info",
-            )
-        )
-
-    if not change_points:
-        flags.append(
-            QualityFlag(
-                code="no_change_points",
-                message="Change-point detectors did not identify strong shifts in the monitored period.",
-                severity="info",
-            )
-        )
-
-    return flags
 
 
 __all__ = [

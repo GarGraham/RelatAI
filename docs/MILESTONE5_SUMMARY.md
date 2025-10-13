@@ -9,32 +9,28 @@
 
 ## Quick Status
 
-✅ **Core Implementation**: Complete and excellent  
-⚠️ **Integration**: Missing API routes and tests  
-❌ **Documentation**: No user guides  
-🐛 **Bugs Found**: 3 (1 critical, 1 medium, 1 minor)  
+✅ **Core Implementation**: Complete and excellent
+✅ **Bug Fixes & Refactors**: Residual forensics alignment, config validation, and module extraction delivered
+⚠️ **Integration**: Missing API routes and tests
+❌ **Documentation**: No user guides
 📊 **Overall Project**: 45% complete
 
 ---
 
-## Critical Findings
+## Resolved Bugs
 
-### 🚨 BUG-M5-001: Index Alignment Issue (CRITICAL)
-**File**: `auto_triage.py`, lines 454-455, 468  
-**Issue**: Residual forensics modifies `frame` parameter and may cause index mismatches with `numeric_data`  
-**Impact**: KeyError exceptions or incorrect residual calculations  
-**Fix**: Use `.copy()` and `.intersection()` for safe index alignment  
-**Priority**: **IMMEDIATE** (blocks production deployment)
+### 🚨 BUG-M5-001: Residual Forensics Index Alignment (RESOLVED)
+- `_compute_residual_forensics()` now operates on a copy of the working frame, derives time windows without mutating inputs, and intersects bucket indices with the numeric matrix before computing residuals.
+- Bucket sample sizes reflect the actual numeric rows used, eliminating KeyErrors and silent mismatches.
+- Added regression coverage in `test_analysis_auto_triage.py` to ensure tricky inputs (such as empty frames) surface meaningful errors instead of propagating misaligned indices.
 
-### ⚠️ BUG-M5-002: Potential Division Edge Case (MEDIUM)
-**Issue**: Insufficient validation prevents empty datasets from reaching suspicion scoring  
-**Fix**: Add explicit empty dataset check in `run_auto_triage()`  
-**Priority**: High
+### ⚠️ BUG-M5-002: Empty Dataset Validation (RESOLVED)
+- `run_auto_triage()` guards against zero-row DataFrames and raises a descriptive `ValueError`, preventing downstream division by artificial denominators.
+- New unit test `test_auto_triage_rejects_empty_dataset` exercises the guard to lock in behaviour.
 
-### ℹ️ BUG-M5-003: Random State Documentation (MINOR)
-**Issue**: Hierarchical clustering doesn't use random_state (but is deterministic anyway)  
-**Fix**: Add clarifying comment  
-**Priority**: Low
+### ℹ️ BUG-M5-003: Hierarchical Clustering Determinism (RESOLVED)
+- Clustering orchestration now routes through a shared helper that explicitly documents AgglomerativeClustering's deterministic nature while unifying the branching logic for K-Means and hierarchical runs.
+- The helper ensures both clustering methods respect sample-size limits and makes future additions easier to reason about.
 
 ---
 
@@ -76,25 +72,13 @@
 
 ---
 
-## Top 5 Refactoring Opportunities
+## Completed Refactors
 
-1. **Extract `change_detection.py` module** (Medium priority)
-   - Move CUSUM & PELT to separate file per ImplementationPlan.md
-   - Improves testability and reusability
-
-2. **Extract `confidence_flags.py` module** (High priority)
-   - Needed for consistent quality flags across all analysis modes
-   - Enables reuse in Correlation and Multivariate modes
-
-3. **Add config validation for change-point methods** (Medium priority)
-   - Currently silently ignores invalid methods
-   - Should fail-fast with clear error message
-
-4. **Reduce clustering code duplication** (Low priority)
-   - Extract common pattern into helper function
-
-5. **Split large file** (Low priority)
-   - 663 lines is manageable but approaching threshold
+1. **Modular Change-Point Detection** – Introduced `change_detection.py` to host reusable CUSUM and PELT helpers, now unit-tested independently for clear signal shifts and short-series edge cases.
+2. **Shared Quality Flags** – Extracted `confidence_flags.py` with a `QualityFlag` dataclass plus builder helpers used by auto-triage to assemble consistent warnings.
+3. **Config Validation Enhancements** – `AutoTriageConfig` rejects unsupported change-point method names during instantiation, providing fast feedback for misconfiguration.
+4. **Clustering Helper Abstraction** – `_apply_clustering_method()` consolidates branching logic, applies consistent sample-size limits, and embeds documentation on deterministic hierarchical behaviour.
+5. **Suspicion Sort Key** – Added `_suspicion_score_key()` to centralise ordering of suspicion scores and reuse identical ranking semantics across variable and time-window outputs.
 
 ---
 
@@ -130,16 +114,16 @@
 
 ### This Week (Complete Milestone 5)
 1. ✅ Review complete
-2. **Fix BUG-M5-001** - 2-3 hours (CRITICAL)
-3. **Create API routes** - 6-8 hours
-4. **Write integration tests** - 4-6 hours
-5. **Update Reference-Guide.md** - 30 minutes ✅
+2. ✅ Fix BUG-M5-001 – Residual forensics now aligns indices and has regression coverage
+3. 🚧 Create API routes – 6-8 hours
+4. 🚧 Write integration tests – 4-6 hours
+5. ✅ Update Reference-Guide.md – Entries cover newly extracted modules
 
 ### Next 2 Weeks
-6. **Extract change_detection.py and confidence_flags.py** - 4-6 hours
-7. **Write AutoTriage_UserGuide.md** - 8-10 hours
-8. **Performance benchmarks** - 4-5 hours
-9. **Fix BUG-M5-002** - 1 hour
+6. ✅ Extract change_detection.py and confidence_flags.py – Modules created with dedicated unit tests
+7. 🚧 Write AutoTriage_UserGuide.md – 8-10 hours
+8. 🚧 Performance benchmarks – 4-5 hours
+9. ✅ Fix BUG-M5-002 – Empty dataset guard prevents invalid scoring
 
 ### Next Month
 10. **Start Streamlit frontend** (Milestone 9)
