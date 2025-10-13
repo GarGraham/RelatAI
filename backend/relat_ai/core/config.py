@@ -31,6 +31,21 @@ class Settings(BaseSettings):
     dataset_registry_state_path: Path = Field(
         default=Path("datasets/registry.json"), alias="DATASET_REGISTRY_STATE_PATH"
     )
+    preprocessing_missing_numeric: str = Field(
+        default="median", alias="PREPROCESSING_MISSING_NUMERIC"
+    )
+    preprocessing_missing_categorical: str = Field(
+        default="mode", alias="PREPROCESSING_MISSING_CATEGORICAL"
+    )
+    preprocessing_missing_constant: str = Field(
+        default="Unknown", alias="PREPROCESSING_MISSING_CONSTANT"
+    )
+    preprocessing_outlier_strategy: str = Field(
+        default="iqr_clip", alias="PREPROCESSING_OUTLIER_STRATEGY"
+    )
+    preprocessing_scaling_strategy: str = Field(
+        default="robust", alias="PREPROCESSING_SCALING_STRATEGY"
+    )
 
     @property
     def max_upload_size_bytes(self) -> int:

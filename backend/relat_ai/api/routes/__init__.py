@@ -1,5 +1,5 @@
 """Route registrations for the public API surface."""
 
-from . import datasets, health
+from . import audit, datasets, health
 
-__all__ = ["datasets", "health"]
+__all__ = ["audit", "datasets", "health"]

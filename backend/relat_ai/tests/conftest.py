@@ -14,6 +14,7 @@ else:
 
 from relat_ai.api.main import create_app
 from relat_ai.core.config import Settings, override_settings
+from relat_ai.services.audit_trail import reset_audit_trail
 from relat_ai.services.ingestion import reset_registry
 
 
@@ -22,8 +23,10 @@ def _reset_registry() -> Iterator[None]:
     """Ensure the dataset registry is cleared between tests."""
 
     reset_registry()
+    reset_audit_trail()
     yield
     reset_registry()
+    reset_audit_trail()
 
 
 @pytest.fixture()

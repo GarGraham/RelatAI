@@ -27,6 +27,7 @@
 - `backend/relat_ai/api/routes/__init__.py`: Registers public API route modules.
 - `backend/relat_ai/api/routes/datasets.py`: Dataset upload and retrieval endpoints returning profiling metadata.
 - `backend/relat_ai/api/routes/health.py`: Health check endpoint used for uptime monitoring.
+- `backend/relat_ai/api/routes/audit.py`: REST endpoints exposing preprocessing audit logs for datasets.
 - `backend/relat_ai/core/__init__.py`: Re-exports configuration primitives.
 - `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration (upload size, profiling sample size, storage paths) with ContextVar-based dependency injection support.
 - `backend/relat_ai/core/exceptions.py`: Custom exception hierarchy for domain-specific errors including persistence failures and registry errors.
@@ -41,6 +42,8 @@
 - `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
+- `backend/relat_ai/services/audit_trail.py`: In-memory audit store capturing preprocessing actions with dataset hashes and timestamps.
+- `backend/relat_ai/services/preprocessing.py`: DataFrame preprocessing strategies (imputation, outlier clipping, robust scaling) with audit trail integration.
 - `backend/relat_ai/utils/__init__.py`: Utility package exports for caching helpers.
 - `backend/relat_ai/utils/caching.py`: Cache interface, in-memory LRU implementation, and decorator utility for memoization.
 - `backend/relat_ai/tests/__init__.py`: Test suite package initialization.
@@ -49,9 +52,11 @@
 - `backend/relat_ai/tests/unit/test_health.py`: Validates health and configuration endpoints of the API.
 - `backend/relat_ai/tests/unit/test_ingestion.py`: Verifies upload persistence behaviors, size enforcement, and loader support for multiple formats.
 - `backend/relat_ai/tests/unit/test_schema_detection.py`: Exercises profiling heuristics and serialization to API models.
+- `backend/relat_ai/tests/unit/test_preprocessing.py`: Validates preprocessing strategies and audit logging integration.
 - `backend/relat_ai/tests/unit/test_analysis_pairwise.py`: Validates pairwise analysis planning across numeric, categorical, and mixed methods.
 - `backend/relat_ai/tests/unit/test_analysis_multivariate.py`: Verifies regression plan expansion and combined regression/ANOVA/partial correlation execution.
 - `backend/relat_ai/tests/integration/test_datasets_api.py`: Integration coverage for dataset upload and retrieval endpoints.
+- `backend/relat_ai/tests/integration/test_audit_api.py`: Validates audit trail API responses after dataset ingestion.
 - `backend/relat_ai/tests/integration/__init__.py`: Integration test namespace marker.
 - `backend/scripts/benchmark.py`: CLI utility to benchmark correlation throughput on datasets.
 

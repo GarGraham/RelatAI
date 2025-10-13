@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
 from collections import OrderedDict
@@ -17,6 +18,11 @@ from relat_ai.core.config import get_settings
 from relat_ai.core.exceptions import DatasetRegistryPersistenceError
 from relat_ai.core.models import DatasetMetadata, DatasetUploadResponse
 from relat_ai.services import schema_detection
+from relat_ai.services.audit_trail import (
+    initialise_audit_log,
+    record_preprocessing_action,
+)
+from relat_ai.services.preprocessing import PreprocessingConfig, preprocess_frame
 from relat_ai.services.registry_state import (
     RegistryStateEntry,
     load_registry_state,
@@ -231,6 +237,8 @@ def save_upload(
     file_obj.seek(0)
     bytes_written = _write_stream(file_obj, target_path, settings.max_upload_size_bytes)
 
+    dataset_hash = _hash_file(target_path)
+
     try:
         frame = load_frame(target_path)
     except Exception:
@@ -244,8 +252,36 @@ def save_upload(
     dataset_metadata.row_count = len(frame.index)
     dataset_metadata.column_count = len(frame.columns)
 
-    profile = schema_detection.profile_frame(
+    initialise_audit_log(
+        dataset_id=dataset_metadata.dataset_id,
+        dataset_name=dataset_metadata.original_filename or dataset_metadata.name,
+        dataset_hash=dataset_hash,
+        row_count=dataset_metadata.row_count,
+        column_count=dataset_metadata.column_count,
+    )
+    record_preprocessing_action(
+        dataset_metadata.dataset_id,
+        action_type="dataset_ingested",
+        details={
+            "row_count": dataset_metadata.row_count,
+            "column_count": dataset_metadata.column_count,
+            "file_size_bytes": bytes_written,
+            "content_type": dataset_metadata.content_type,
+        },
+    )
+
+    preprocessing_config = PreprocessingConfig.from_settings(settings)
+    processed_frame = preprocess_frame(
         frame,
+        dataset_id=dataset_metadata.dataset_id,
+        config=preprocessing_config,
+    )
+
+    dataset_metadata.row_count = len(processed_frame.index)
+    dataset_metadata.column_count = len(processed_frame.columns)
+
+    profile = schema_detection.profile_frame(
+        processed_frame,
         dataset_id=dataset_metadata.dataset_id,
         sample_size=settings.profile_sample_size,
         dataset_name=dataset_metadata.original_filename or dataset_metadata.name,
@@ -296,6 +332,16 @@ def _read_excel(path: Path) -> pd.DataFrame:
         return pd.read_excel(path, engine="openpyxl")
     except ImportError as exc:
         raise ValueError("Excel support requires the 'openpyxl' dependency") from exc
+
+
+def _hash_file(path: Path, *, chunk_size: int = 8192) -> str:
+    """Return the SHA-256 hash for a file on disk."""
+
+    digest = hashlib.sha256()
+    with path.open("rb") as buffer:
+        for chunk in iter(lambda: buffer.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _write_stream(source: BinaryIO, destination: Path, max_bytes: int) -> int:
