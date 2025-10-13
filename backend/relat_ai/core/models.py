@@ -67,3 +67,24 @@ class AnalysisRequest(BaseModel):
     include_interactions: bool = True
     anchor_columns: list[str] = Field(default_factory=list)
     filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class AuditActionModel(BaseModel):
+    """Serialized representation of a preprocessing action."""
+
+    action_type: str
+    timestamp: datetime
+    details: dict[str, Any]
+    column: str | None = None
+
+
+class AuditLogModel(BaseModel):
+    """Serialized audit log captured during dataset ingestion."""
+
+    dataset_id: str
+    dataset_name: str
+    dataset_hash: str
+    row_count: int
+    column_count: int
+    created_at: datetime
+    actions: list[AuditActionModel]
