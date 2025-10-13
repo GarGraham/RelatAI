@@ -68,8 +68,31 @@ def test_multivariate_pipeline_runs_regression_anova_and_partial() -> None:
     assert any(model.model_type == "regression" for model in result.models)
     assert any(model.model_type == "anova" for model in result.models)
     regression = next(model for model in result.models if model.model_type == "regression")
-    assert "r_squared" in regression.metrics
+    assert regression.metrics.r_squared is not None
 
     assert result.correlations
     partial = next(record for record in result.correlations if record.method == "partial_correlation")
     assert -1.0 <= partial.coefficient <= 1.0
+
+
+def test_partial_correlation_skips_when_sample_size_too_small() -> None:
+    """Partial correlations should be skipped instead of raising when insufficient data remains."""
+
+    frame = pd.DataFrame(
+        {
+            "target": [1.0],
+            "candidate": [2.0],
+            "control": [3.0],
+        }
+    )
+
+    request = PartialCorrelationRequest(
+        target="target",
+        candidates=["candidate"],
+        controls=["control"],
+        sample_size_limit=1,
+    )
+
+    result = build_multivariate_models(frame, None, partial=request)
+
+    assert list(result.correlations) == []

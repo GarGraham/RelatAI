@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from dataclasses import asdict
 from typing import Iterable
 
 from relat_ai.services.analysis.utils import AnalysisResult, CorrelationRecord, ModelSummary
@@ -44,7 +45,7 @@ class SummarizationService:
         for model in models:
             predictors = ", ".join(model.predictors)
             metrics = []
-            for name, value in model.metrics.items():
+            for name, value in asdict(model.metrics).items():
                 if value is None or (isinstance(value, float) and math.isnan(value)):
                     continue
                 metrics.append(f"{name}={value:.3f}")

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from relat_ai.services.analysis.pairwise import (
     PairwiseAnalysisPlan,
     compute_pairwise_correlations,
 )
+from relat_ai.utils.caching import InMemoryCache
 
 
 def test_compute_pairwise_correlations_produces_expected_methods() -> None:
@@ -50,4 +52,44 @@ def test_compute_pairwise_correlations_produces_expected_methods() -> None:
         record for record in result.correlations if record.method == "cramers_v"
     )
     assert 0.0 <= cramers.coefficient <= 1.0
-    assert "chi_square" in cramers.extras
+    assert cramers.extras is not None
+    assert cramers.extras.chi_square is not None
+
+
+def test_compute_pairwise_correlations_missing_column_raises() -> None:
+    """Requests for unknown columns should surface a clear error."""
+
+    frame = pd.DataFrame({"x": [1, 2, 3], "y": [2, 4, 6]})
+
+    with pytest.raises(ValueError, match="Columns not found"):
+        compute_pairwise_correlations(frame, columns=["x", "z"])
+
+
+def test_pairwise_cache_key_distinguishes_column_subsets() -> None:
+    """Caching should return the correct subset of correlations for repeated requests."""
+
+    frame = pd.DataFrame(
+        {
+            "a": [1, 2, 3, 4],
+            "b": [2, 3, 4, 5],
+            "c": [4, 5, 6, 7],
+        }
+    )
+
+    cache = InMemoryCache()
+    first = compute_pairwise_correlations(
+        frame,
+        columns=["a", "b", "c"],
+        dataset_id="demo",
+        cache=cache,
+    )
+    assert any(record.variables == ("a", "b") for record in first.correlations)
+
+    second = compute_pairwise_correlations(
+        frame,
+        columns=["a", "b"],
+        dataset_id="demo",
+        cache=cache,
+    )
+    observed_pairs = {record.variables for record in second.correlations}
+    assert observed_pairs == {("a", "b")}
