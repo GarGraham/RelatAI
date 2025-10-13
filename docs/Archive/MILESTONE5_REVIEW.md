@@ -1,3 +1,5 @@
+ARCHIVED - NO LONGER RELEVANT
+
 # Milestone 5 Implementation Review: Auto-Triage Mode
 
 **Project**: RelatAI  
