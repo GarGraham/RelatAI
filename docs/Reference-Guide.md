@@ -55,7 +55,7 @@
 - `backend/relat_ai/services/configuration.py`: In-memory configuration store with validation, filter application helpers, and defaults derived from dataset profiles.
 - `backend/relat_ai/services/templates.py`: Thread-safe storage for reusable configuration templates referencing dataset configurations.
 - `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
-- `backend/relat_ai/services/results.py`: Serialization helpers, caching key generation, and reduced dataset export utilities for analysis outputs.
+- `backend/relat_ai/services/results.py`: SignatureBuilder for deterministic cache keys, converter utilities for analysis payloads, ResultStorage with TTL/LRU eviction, and reduced dataset export helpers.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
 - `backend/relat_ai/services/audit_trail.py`: In-memory audit store capturing preprocessing actions with dataset hashes and timestamps.

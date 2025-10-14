@@ -47,10 +47,22 @@ class CorrelationRecordModel(BaseModel):
     """Serialized representation of a pairwise correlation record."""
 
     variables: tuple[str, str]
-    coefficient: float
-    p_value: float | None = None
-    sample_size: int
-    method: str
+    coefficient: float = Field(
+        ge=-1.0,
+        le=1.0,
+        description="Correlation coefficient constrained to [-1, 1]",
+    )
+    p_value: float | None = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Two-tailed p-value within [0, 1]",
+    )
+    sample_size: int = Field(
+        gt=0,
+        description="Number of observations contributing to the statistic",
+    )
+    method: str = Field(min_length=1)
     statistic: float | None = None
     extras: CorrelationExtrasModel = None
     quality_flags: list[QualityFlagModel] = Field(default_factory=list)
@@ -67,8 +79,14 @@ class CorrelationTableModel(BaseModel):
 class RegressionMetricsModel(BaseModel):
     """Regression-specific goodness-of-fit metrics."""
 
-    r_squared: float
-    adjusted_r_squared: float
+    r_squared: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Coefficient of determination (R²)",
+    )
+    adjusted_r_squared: float = Field(
+        description="Adjusted R² (can be negative for poorly fitting models)",
+    )
     aic: float
     bic: float
     cohen_f2: float | None = None
@@ -164,7 +182,11 @@ class RankedInsightModel(BaseModel):
     """Generic ranked insight surfaced from an analysis run."""
 
     label: str
-    score: float
+    score: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Normalized importance score within [0, 1]",
+    )
     drivers: list[str] = Field(default_factory=list)
     category: str = "general"
     method: str | None = None
@@ -203,7 +225,7 @@ class SerializedAnalysisResult(BaseModel):
     parameters_signature: str | None = None
     correlation_table: CorrelationTableModel | None = None
     multivariate_summary: MultivariateSummaryModel | None = None
-    auto_triage: AutoTriageResultModel | None = None
+    auto_triage_result: AutoTriageResultModel | None = None
     ranked_insights: list[RankedInsightModel] = Field(default_factory=list)
     ai_summary: AISummaryModel | None = None
     quality_flags: list[QualityFlagModel] = Field(default_factory=list)
