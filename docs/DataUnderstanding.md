@@ -219,6 +219,38 @@ Frontend tests:
   bullet texts when metadata is present.
 * Snapshots should include the fallback rendering path (no metadata) and at
   least one case with navigation buttons enabled.
+### How these map to existing response models
+
+`SuspicionItem` is intended to replace the thinner `RankedInsightModel` that is
+currently emitted from `backend/relat_ai/core/results.py`.  The existing model
+has a `label`, `score`, and loose `metadata` bag; the richer structure above
+would move the `label` → `target`, keep `score` as-is, move `drivers` into
+`top_signals`, and break the old `metadata` field into first-class `contrib`,
+`links`, and `flags`.  Downstream code should treat the new object as a superset
+of the existing insight with backwards compatibility provided by folding the
+old `metadata` keys into the new nested dictionaries when needed.  The
+`RankedInsightModel` class remains as the compatibility shim until all clients
+understand the expanded structure.
+
+`ClusterProfile`, `PCAExplain`, and `ChangePointReport` correspond to the
+cluster, PCA, and change-point sections on `AutoTriageResultModel`.  Today those
+fields are thin (`ClusterModel`, `PCAComponentModel`, `ChangePointModel`).  The
+plan is to evolve `AutoTriageResultModel` so that:
+
+* `clusters: list[ClusterModel]` becomes a single `ClusterProfile` (with the
+  existing size counts exposed as `sizes` and new `top_diff_features`,
+  `feature_importance`, `medoids`, and `by_time` sections replacing the opaque
+  `metadata`).
+* `pca_components: list[PCAComponentModel]` is replaced by a `PCAExplain`
+  payload, keeping component-level variance ratios while surfacing the new
+  narrative strings and sorted loading table.
+* `change_points: list[ChangePointModel]` is upgraded so each entry is a
+  `ChangePointReport` that captures segment summaries, test strength, and UI
+  context hooks.
+
+`ResidualForensicsModel` within `AutoTriageResultModel` does not yet have an
+explicit replacement, but the intention is to align it with the `links` and
+`flags` structure from `SuspicionItem` to maintain consistent UX affordances.
 
 ClusterProfile = {
   "method": "kmeans" | "hierarchical",
@@ -232,9 +264,18 @@ ClusterProfile = {
     {"feature":"Calibration Mean","importance":0.27}, ...
   ],
   "medoids": { "0": [row_idx,...], "1": [...], "2":[...] },  # representative samples
-  "by_time": [  # optional, if time column
-    {"cluster":2,"window":"2025-W10..W12","pct":0.73}
-  ]
+  "per_feature_stats": {
+    "0": {"Injection Time": {"mean": 3.2, "median": 3.1, "iqr": 0.8}, ...},
+    "1": {...},
+    "2": {...}
+  },
+  "time_slices": {
+    "window_unit": "week",
+    "summaries": [
+      {"window":"2025-W10..W12","cluster":2,"pct":0.73,
+       "n": 95, "trend":"increasing"}
+    ]
+  }
 }
 
 PCAExplain = {
@@ -257,6 +298,36 @@ ChangePointReport = {
   "strength":[2.3, 4.8, 3.1],      # test statistics
   "context": [ {"index":231,"time":"2025-03-18","cluster_shift_to":2,"batch":"B-104"} ]
 }
+
+## Change-point detection implementation decision
+
+- **Adopt `ruptures` for the production implementation.** The current
+  `backend/relat_ai/services/analysis/change_detection.py` shim will be replaced
+  with a thin wrapper around `ruptures.detection.Pelt` so we can rely on the
+  battle-tested penalty + minimum-segment logic already provided by the
+  library, instead of continually patching our simplified PELT translation.
+- **Dependency + configuration updates.** Add `ruptures>=1.1.9` to
+  `backend/requirements.txt`. Default configuration inside the wrapper should
+  expose the same call signature (series in, indices out) while pinning
+  `model="rbf"`, `min_size=5`, and a default penalty equal to
+  `penalty_multiplier * np.log(len(series))` (retaining today’s multiplier
+  semantics).
+- **Unit-test updates.** Extend
+  `backend/relat_ai/tests/unit/test_analysis_change_detection.py` to (a)
+  validate that we pass the penalty/min-size defaults through to the
+  `ruptures.detection.Pelt` instance, (b) continue exercising the CUSUM helper
+  for backwards compatibility, and (c) assert that a synthetic step series
+  returns monotonically increasing change indices when `ruptures` is wired up.
+- **Fallback + compatibility expectations.** Keep the existing numpy-only
+  routines available behind the same module-level symbols until downstream
+  consumers migrate. Auto-triage scoring and the frontend change-point tab
+  expect the `ChangePointReport` schema above and a synchronous API; maintain
+  those interfaces by (1) guarding the `ruptures` import so notebooks/tests can
+  fall back to the legacy implementation if the dependency is unavailable, and
+  (2) mirroring the legacy output format (list of indices + `method="pelt"`).
+  During the rollout the UI should continue to receive identical payloads, with
+  only the internal scoring heuristics benefiting from the more stable
+  segmentation.
 
 1) Backend: add interpretation functions
 1.1 Cluster profiling (the missing piece)
@@ -341,9 +412,44 @@ UI result: under the pie charts, render:
 
 “What defines each cluster?” chips using the largest mean deltas
 
-“Representative rows” link (medoids)
+“Representative rows” link (medoids) plus profiling table (per_feature_stats)
 
-“Appears mostly during…” if by_time shows concentration
+Temporal chips sourced from time_slices summaries (“Appears mostly during…”)
+
+
+Implementation checklist (cluster profiling payload):
+
+1. Persist cluster membership in auto-triage
+   * Extend `ClusterInsight` (in `backend/relat_ai/services/analysis/auto_triage.py`) so it carries:
+     - `member_indices: list[int]` (row ids relative to the profiled frame) per cluster id
+     - `member_ids: list[str]` or similar if the ingestion pipeline exposes stable primary keys
+     - a `label_column`/`cluster_labels` vector to keep alignment with the dataframe for downstream routines.
+   * When `auto_triage.clusterize()` runs, stash the raw `labels_` from the clustering estimator on the insight object before any dataframe slicing/shuffling. Do **not** rely on recomputing labels.
+   * Update `compute_cluster_profile` to accept the persisted labels instead of deriving them from re-running the model. Use the stored `member_indices` to fetch rows for medoid reconstruction and profiling routines.
+
+2. Serialize richer structures in results
+   * In `backend/relat_ai/services/results.py`, augment `ClusterModel` (or introduce a sibling `ClusterProfileModel`) with fields for:
+     - `medoids: dict[str, list[int]]`
+     - `per_feature_stats: dict[str, dict[str, ClusterFeatureStats]]` where `ClusterFeatureStats` captures mean/median/std/iqr/count.
+     - `time_slices: TimeSliceSummary` encapsulating aggregation windows, cluster proportions, counts, and optional trend labels.
+     - `member_indices` / `member_ids` to allow front-end drill-downs.
+   * Ensure `to_dict()`/`model_dump()` serializes nested dataclasses/TypedDicts cleanly (use `jsonable_encoder` or pydantic models as needed).
+   * Document how medoids are computed (distance to centroid or stored representative indices) and confirm we rehydrate original rows when building response payloads.
+   * Capture per-feature stats by applying `df.loc[cluster_indices, feature].agg(["mean","median","std",q1,q3])` and store `iqr=q3-q1`. Persist each cluster’s stats under the cluster id key.
+   * Time-slice summaries: bucket by iso week (default) or configured granularity, compute `n` per cluster per bucket, and derive `pct = n / window_total`. Add `trend` via rolling comparison (e.g., direction of `pct` change over last 3 buckets).
+   * Provide helper functions in `results.py` to convert numpy types to native Python before serialization to avoid JSON issues.
+
+3. Streamlit auto-triage surface
+   * Update `frontend/streamlit_app/components/autotriage_view.py` to read the new payload keys and render:
+     - “Representative Samples” table showing medoid rows (include key features, timestamp, and label).
+     - “Cluster Profiling” expandable section with per-feature stats (mean/median/std/iqr deltas).
+     - Temporal chips: e.g., `st.status`/`st.metric` style badges summarizing `time_slices.summaries` and highlighting dominant windows.
+     - Inline tooltips describing how medoids were selected and how statistics are computed.
+
+4. Test coverage
+   * Backend: extend `tests/backend/services/analysis/test_auto_triage.py` (or create new coverage) to assert `ClusterInsight` retains labels, medoids, per-feature stats, and time-slice structures. Mock dataframe to verify serialization via `results.ClusterModel`.
+   * Frontend: add a smoke test (e.g., `tests/frontend/test_autotriage_view.py`) wiring a sample payload through Streamlit component to ensure new tables render without exceptions (use `streamlit.testing.v1.AppTest` helper).
+   * Update any snapshot fixtures to include the additional keys, and add regression cases for missing optional fields (`time_slices` absent, medoids empty).
 
 1.2 PCA narrative + drill-downs
 def interpret_pca(pca, feature_names, top=5) -> dict:

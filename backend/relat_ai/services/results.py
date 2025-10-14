@@ -57,6 +57,38 @@ from relat_ai.services.analysis.utils import (
 TResult = TypeVar("TResult")
 TModel = TypeVar("TModel", bound=BaseModel)
 
+# ---------------------------------------------------------------------------
+# Serializer migration notes
+# ---------------------------------------------------------------------------
+#
+# The richer auto-triage payloads introduce structured replacements for the
+# free-form ``RankedInsightModel`` and the minimal ``AutoTriageResultModel``.
+# Before wiring in the new Pydantic classes, the following updates need to land
+# so ``/analysis`` responses stay shape-compatible across cached and live runs:
+#
+# * Introduce ``SuspicionItemModel``, ``ClusterProfileModel``,
+#   ``PCAExplainModel``, and ``ChangePointReportModel`` alongside the legacy
+#   models.  The new classes should expose explicit nested metadata rather than
+#   ``dict`` catch-alls and carry `quality_flags` for consistency.
+# * Extend ``SerializedAnalysisResult`` with a ``schema_version`` integer and a
+#   ``mode_payloads`` mapping so cached entries can declare whether they still
+#   use the v1 (RankedInsightModel/AutoTriageResultModel) schema or the v2
+#   structured replacements.  The cache key must incorporate that version so
+#   older blobs are invalidated automatically.
+# * Update ``AnalysisResultResponse`` assembly to backfill legacy fields when a
+#   cached v1 entry is read while the new serializer is enabled.  This ensures
+#   frontends that have not yet flipped the feature flag continue to receive the
+#   familiar keys.
+# * Add opt-in switches (e.g. ``use_rich_autotriage`` parameter) so callers like
+#   batch notebooks can migrate independently.  The serializer helpers below
+#   should accept both shapes and emit whichever variant is requested.
+# * Revisit ``QualityFlagConverter`` and ``AutoTriageConverters`` to populate the
+#   detailed `contrib`, `top_signals`, and narrative fields from the new
+#   dataclasses so no information is lost in translation.
+#
+# Once those pieces are in place we can safely remove the legacy types in a
+# later cleanup milestone.
+
 
 class SignatureBuilder:
     """Deterministic signature generation for cache keys."""
