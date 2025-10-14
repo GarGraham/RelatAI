@@ -256,38 +256,200 @@ def display_results(results: dict, mode: str):
 
 
 def render_export_options(results: dict, mode: str):
-    """Render export controls for results.
+    """Render comprehensive export controls for results.
     
     Args:
         results: Analysis results dictionary
         mode: Analysis mode
     """
-    st.subheader("Export Results")
+    from utils.export_utils import (
+        export_results_json,
+        export_correlation_csv,
+        export_multivariate_csv,
+        export_autotriage_csv,
+        create_export_package,
+        format_export_metadata
+    )
+    from datetime import datetime
     
-    col1, col2, col3 = st.columns(3)
+    st.subheader("📥 Export Results")
     
-    with col1:
-        # Export JSON
-        import json
+    # Get dataset info for naming
+    dataset = get_selected_dataset()
+    dataset_name = dataset.get('name', 'dataset').replace('.', '_') if dataset else 'dataset'
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Export format tabs
+    tab1, tab2, tab3 = st.tabs(["📄 Quick Export", "📦 Complete Package", "📋 Data Only"])
+    
+    with tab1:
+        st.markdown("**Quick single-file exports:**")
         
-        json_str = json.dumps(results, indent=2)
+        col1, col2, col3 = st.columns(3)
         
-        st.download_button(
-            label="📥 Download JSON",
-            data=json_str,
-            file_name=f"analysis_results_{mode}.json",
-            mime="application/json"
-        )
+        with col1:
+            # Export JSON
+            json_data = export_results_json(results, mode)
+            
+            st.download_button(
+                label="📥 JSON (Full Results)",
+                data=json_data,
+                file_name=f"{dataset_name}_{mode}_{timestamp}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+        
+        with col2:
+            # Export CSV (mode-specific)
+            csv_data = None
+            csv_label = "📊 CSV"
+            
+            if mode == "correlation":
+                csv_data = export_correlation_csv(results)
+                csv_label = "📊 CSV (Correlations)"
+            elif mode == "multivariate":
+                csv_data = export_multivariate_csv(results)
+                csv_label = "📊 CSV (Coefficients)"
+            elif mode == "auto-triage":
+                csv_data = export_autotriage_csv(results)
+                csv_label = "📊 CSV (Rankings)"
+            
+            if csv_data:
+                st.download_button(
+                    label=csv_label,
+                    data=csv_data,
+                    file_name=f"{dataset_name}_{mode}_{timestamp}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            else:
+                st.button(csv_label, disabled=True, use_container_width=True)
+                st.caption("No data available")
+        
+        with col3:
+            # Export metadata
+            config = get_current_config()
+            metadata_text = format_export_metadata(
+                dataset_id=dataset.get('id', 'unknown') if dataset else 'unknown',
+                dataset_name=dataset_name,
+                mode=mode,
+                config=config
+            )
+            
+            st.download_button(
+                label="📝 Metadata (TXT)",
+                data=metadata_text,
+                file_name=f"{dataset_name}_{mode}_{timestamp}_metadata.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
     
-    with col2:
-        # Export summary (placeholder for future CSV export)
-        st.button("📊 Export Summary (CSV)", disabled=True)
-        st.caption("Coming soon")
+    with tab2:
+        st.markdown("**Export complete analysis package:**")
+        st.caption("Includes JSON results, CSV tables, and metadata")
+        
+        # Create export package
+        package = create_export_package(results, mode, dataset_name)
+        
+        # Display package contents
+        with st.expander("📦 Package Contents", expanded=False):
+            for filename in package.keys():
+                st.text(f"• {filename}")
+        
+        # Instructions for downloading multiple files
+        st.info("💡 **Tip:** Download each file individually below:")
+        
+        for filename, content in package.items():
+            file_ext = filename.split('.')[-1]
+            mime_type = {
+                'json': 'application/json',
+                'csv': 'text/csv',
+                'txt': 'text/plain'
+            }.get(file_ext, 'text/plain')
+            
+            st.download_button(
+                label=f"📥 {filename}",
+                data=content,
+                file_name=filename,
+                mime=mime_type,
+                key=f"export_{filename}"
+            )
     
-    with col3:
-        # Export visualizations (placeholder)
-        st.button("🖼️ Export Visualizations", disabled=True)
-        st.caption("Coming soon")
+    with tab3:
+        st.markdown("**Export raw data tables:**")
+        st.caption("Data-only exports for external analysis")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Mode-specific data export
+            if mode == "correlation":
+                table_data = export_correlation_csv(results)
+                st.download_button(
+                    label="📊 Correlation Table (CSV)",
+                    data=table_data,
+                    file_name=f"{dataset_name}_correlation_table_{timestamp}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            
+            elif mode == "multivariate":
+                table_data = export_multivariate_csv(results)
+                st.download_button(
+                    label="📊 Coefficient Table (CSV)",
+                    data=table_data,
+                    file_name=f"{dataset_name}_coefficients_{timestamp}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            
+            elif mode == "auto-triage":
+                table_data = export_autotriage_csv(results)
+                st.download_button(
+                    label="📊 Suspicion Rankings (CSV)",
+                    data=table_data,
+                    file_name=f"{dataset_name}_rankings_{timestamp}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+        
+        with col2:
+            # Raw JSON (unformatted)
+            import json
+            raw_json = json.dumps(results)
+            
+            st.download_button(
+                label="📄 Raw JSON (Compact)",
+                data=raw_json,
+                file_name=f"{dataset_name}_{mode}_raw_{timestamp}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+    
+    st.divider()
+    
+    # Export tips
+    with st.expander("💡 Export Tips & Best Practices"):
+        st.markdown("""
+        **File Format Guide:**
+        - **JSON**: Best for re-importing into RelatAI or programmatic analysis
+        - **CSV**: Best for Excel, statistical software, or manual review
+        - **TXT Metadata**: Provides analysis configuration and timestamp details
+        
+        **Recommended Workflows:**
+        1. **Quick Review**: Download CSV for immediate viewing in Excel
+        2. **Full Archive**: Use Complete Package for comprehensive documentation
+        3. **External Analysis**: Use Data Only exports for importing into R/Python
+        4. **Audit Trail**: Always download metadata with your results
+        
+        **File Naming Convention:**
+        `{dataset_name}_{analysis_mode}_{timestamp}.{ext}`
+        
+        **Storage Recommendations:**
+        - Organize exports by project or date
+        - Keep metadata files with corresponding data files
+        - Use version control for analysis configurations
+        """)
 
 
 if __name__ == "__main__":

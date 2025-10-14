@@ -122,6 +122,216 @@ def main():
             current_params=mode_params,
             selected_columns=new_selected
         )
+        
+        st.markdown("---")
+        
+        # Advanced Settings (Collapsible)
+        with st.expander("⚙️ Advanced Settings", expanded=False):
+            st.markdown("### Preprocessing Controls")
+            
+            col_prep1, col_prep2 = st.columns(2)
+            
+            with col_prep1:
+                st.markdown("**Missing Data Handling:**")
+                imputation_strategy = st.selectbox(
+                    "Imputation Strategy",
+                    options=["mean", "median", "mode", "forward_fill", "backward_fill", "drop"],
+                    index=1,  # median default
+                    help="Method for handling missing values. Mean/median for numeric, mode for categorical.",
+                    key="advanced_imputation"
+                )
+                
+                st.markdown("**Outlier Handling:**")
+                outlier_method = st.selectbox(
+                    "Outlier Detection Method",
+                    options=["iqr", "z_score", "isolation_forest", "none"],
+                    index=0,  # IQR default
+                    help="Method for detecting outliers. IQR: values beyond 1.5*IQR. Z-score: |z| > 3.",
+                    key="advanced_outlier_method"
+                )
+                
+                if outlier_method != "none":
+                    outlier_action = st.radio(
+                        "Outlier Action",
+                        options=["clip", "remove", "flag_only"],
+                        index=0,  # clip default
+                        help="Clip: cap to threshold. Remove: delete rows. Flag: mark but keep.",
+                        key="advanced_outlier_action"
+                    )
+                else:
+                    outlier_action = "none"
+            
+            with col_prep2:
+                st.markdown("**Scaling/Normalization:**")
+                scaling_method = st.selectbox(
+                    "Scaling Method",
+                    options=["none", "standard", "minmax", "robust", "log"],
+                    index=0,  # none default
+                    help="Standard: (x-μ)/σ. MinMax: [0,1]. Robust: uses median/IQR. Log: log transform.",
+                    key="advanced_scaling"
+                )
+                
+                st.markdown("**Transformation:**")
+                apply_transform = st.checkbox(
+                    "Apply Power Transform",
+                    value=False,
+                    help="Apply Box-Cox or Yeo-Johnson transformation to achieve normality",
+                    key="advanced_power_transform"
+                )
+                
+                if apply_transform:
+                    transform_method = st.radio(
+                        "Transform Method",
+                        options=["box-cox", "yeo-johnson"],
+                        index=1,  # yeo-johnson (works with negative values)
+                        help="Box-Cox: requires positive values. Yeo-Johnson: works with any values.",
+                        key="advanced_transform_method"
+                    )
+                else:
+                    transform_method = "none"
+            
+            st.markdown("---")
+            st.markdown("### Performance Settings")
+            
+            col_perf1, col_perf2 = st.columns(2)
+            
+            with col_perf1:
+                st.markdown("**Sampling:**")
+                use_sampling = st.checkbox(
+                    "Enable Data Sampling",
+                    value=False,
+                    help="Use subset of data for faster analysis. Recommended for datasets > 50k rows.",
+                    key="advanced_sampling"
+                )
+                
+                if use_sampling:
+                    sample_size = st.number_input(
+                        "Sample Size",
+                        min_value=1000,
+                        max_value=100000,
+                        value=10000,
+                        step=1000,
+                        help="Number of rows to sample for analysis",
+                        key="advanced_sample_size"
+                    )
+                    
+                    sample_method = st.radio(
+                        "Sampling Method",
+                        options=["random", "stratified"],
+                        index=0,
+                        help="Random: uniform random sampling. Stratified: maintain class proportions.",
+                        key="advanced_sample_method"
+                    )
+                else:
+                    sample_size = None
+                    sample_method = "none"
+            
+            with col_perf2:
+                st.markdown("**Computation:**")
+                use_parallel = st.checkbox(
+                    "Enable Parallel Processing",
+                    value=True,
+                    help="Use multiple CPU cores for faster computation",
+                    key="advanced_parallel"
+                )
+                
+                if use_parallel:
+                    n_workers = st.slider(
+                        "Number of Workers",
+                        min_value=1,
+                        max_value=8,
+                        value=4,
+                        help="Number of parallel workers. More workers = faster but more memory.",
+                        key="advanced_workers"
+                    )
+                else:
+                    n_workers = 1
+                
+                cache_results = st.checkbox(
+                    "Cache Analysis Results",
+                    value=True,
+                    help="Store results for faster retrieval on repeat runs",
+                    key="advanced_cache"
+                )
+            
+            st.markdown("---")
+            st.markdown("### Sensitivity Thresholds")
+            
+            col_sens1, col_sens2 = st.columns(2)
+            
+            with col_sens1:
+                st.markdown("**Statistical Significance:**")
+                alpha_level = st.slider(
+                    "Alpha Level (α)",
+                    min_value=0.001,
+                    max_value=0.1,
+                    value=0.05,
+                    step=0.001,
+                    format="%.3f",
+                    help="Threshold for statistical significance. Common values: 0.05, 0.01, 0.001",
+                    key="advanced_alpha"
+                )
+                
+                st.markdown("**Correlation Threshold:**")
+                corr_threshold = st.slider(
+                    "Minimum |Correlation|",
+                    min_value=0.0,
+                    max_value=1.0,
+                    value=0.3,
+                    step=0.05,
+                    help="Minimum absolute correlation to report",
+                    key="advanced_corr_threshold"
+                )
+            
+            with col_sens2:
+                st.markdown("**Effect Size:**")
+                min_effect_size = st.selectbox(
+                    "Minimum Effect Size",
+                    options=["small", "medium", "large", "none"],
+                    index=3,  # none default
+                    help="Cohen's d thresholds: small=0.2, medium=0.5, large=0.8",
+                    key="advanced_effect_size"
+                )
+                
+                st.markdown("**Sample Size:**")
+                min_sample_size = st.number_input(
+                    "Minimum Sample Size",
+                    min_value=10,
+                    max_value=1000,
+                    value=30,
+                    step=10,
+                    help="Minimum n for valid statistical inference",
+                    key="advanced_min_n"
+                )
+            
+            # Store advanced settings in configuration
+            advanced_settings = {
+                "preprocessing": {
+                    "imputation_strategy": imputation_strategy,
+                    "outlier_method": outlier_method,
+                    "outlier_action": outlier_action,
+                    "scaling_method": scaling_method,
+                    "power_transform": transform_method if apply_transform else "none"
+                },
+                "performance": {
+                    "use_sampling": use_sampling,
+                    "sample_size": sample_size if use_sampling else None,
+                    "sample_method": sample_method if use_sampling else "none",
+                    "parallel": use_parallel,
+                    "n_workers": n_workers if use_parallel else 1,
+                    "cache_results": cache_results
+                },
+                "thresholds": {
+                    "alpha": alpha_level,
+                    "correlation_min": corr_threshold,
+                    "effect_size_min": min_effect_size,
+                    "sample_size_min": min_sample_size
+                }
+            }
+            
+            # Add to mode params
+            if 'advanced' not in new_params:
+                new_params['advanced'] = advanced_settings
     
     with col_sidebar:
         # Configuration Actions
