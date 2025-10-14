@@ -22,7 +22,7 @@ from relat_ai.services.configuration import (
     update_configuration,
 )
 from relat_ai.services.ingestion import get_registry, load_frame
-from relat_ai.services.templates import create_template, get_template, list_templates
+from relat_ai.services.templates import create_template, delete_template, get_template, list_templates
 
 router = APIRouter(prefix="/datasets", tags=["configuration"])
 
@@ -53,6 +53,10 @@ async def read_configuration(dataset_id: str) -> DatasetConfiguration:
     "/{dataset_id}/configuration",
     response_model=DatasetConfiguration,
     summary="Update configuration options for a dataset",
+    description=(
+        "Filters support partial updates: ``null`` leaves existing filters in place, ``{}`` clears all "
+        "filters, and providing column mappings replaces those specific filters."
+    ),
 )
 async def patch_configuration(
     dataset_id: str, payload: ConfigurationUpdateRequest
@@ -149,4 +153,14 @@ async def apply_configuration_template(dataset_id: str, template_id: str) -> Dat
         return replace_configuration(dataset_id, template.configuration, record.profile)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.delete(
+    "/{dataset_id}/templates/{template_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a configuration template",
+)
+async def delete_configuration_template(dataset_id: str, template_id: str) -> None:
+    _get_dataset_record(dataset_id)
+    delete_template(dataset_id, template_id)
 
