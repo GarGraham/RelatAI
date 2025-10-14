@@ -1,3 +1,5 @@
+ARCHIVED - NO LONGER RELEVANT
+
 Milestone 7 Review: Configuration & Filtering Layer
 ✅ Implementation Summary
 Milestone 7 successfully delivered a comprehensive configuration and filtering layer with the following components:
