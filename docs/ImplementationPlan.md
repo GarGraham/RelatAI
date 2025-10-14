@@ -111,7 +111,7 @@ This update synchronizes the Implementation Plan with significant enhancements t
    - Add confidence and quality flag assignment (low n, collinearity, high missingness warnings)
    - Optional extensions: t-SNE/UMAP dimensionality reduction, Isolation Forest, One-Class SVM anomaly detection
 
-6. **Multivariate Enhancements**
+6. **Multivariate Enhancements** *(Completed)*
    - Add Partial Least Squares (PLS) regression for collinear predictor sets
    - Enhance interaction term generation with configurable depth control
    - Implement effect size computations and multi-collinearity diagnostics (VIF)
