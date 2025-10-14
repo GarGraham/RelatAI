@@ -41,6 +41,7 @@
 - `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration (upload size, profiling sample size, storage paths) with ContextVar-based dependency injection support.
 - `backend/relat_ai/core/exceptions.py`: Custom exception hierarchy for domain-specific errors including persistence failures and registry errors.
 - `backend/relat_ai/core/models.py`: Shared domain models for dataset metadata, profiling payloads, and analysis requests.
+- `backend/relat_ai/core/results.py`: Pydantic schemas describing serialized analysis results, quality flags, ranked insights, and AI summaries.
 - `backend/relat_ai/services/__init__.py`: Aggregates service layer modules.
 - `backend/relat_ai/services/ingestion.py`: Streaming upload persistence, dataset registry management with retry logic, and dataframe loaders supporting CSV, Parquet, and Excel formats.
 - `backend/relat_ai/services/registry_state.py`: Persistence and restoration helpers for dataset registry state with defensive error handling and validation.
@@ -54,6 +55,7 @@
 - `backend/relat_ai/services/configuration.py`: In-memory configuration store with validation, filter application helpers, and defaults derived from dataset profiles.
 - `backend/relat_ai/services/templates.py`: Thread-safe storage for reusable configuration templates referencing dataset configurations.
 - `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
+- `backend/relat_ai/services/results.py`: Serialization helpers, caching key generation, and reduced dataset export utilities for analysis outputs.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
 - `backend/relat_ai/services/audit_trail.py`: In-memory audit store capturing preprocessing actions with dataset hashes and timestamps.
