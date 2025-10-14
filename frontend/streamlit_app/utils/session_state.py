@@ -192,6 +192,36 @@ def reset_configuration() -> None:
     set_state("selected_template", None)
 
 
+def set_analysis_running(running: bool) -> None:
+    """
+    Set the analysis running state.
+    
+    Args:
+        running: True if analysis is running, False otherwise
+    """
+    set_state("analysis_running", running)
+
+
+def get_analysis_results() -> Optional[dict]:
+    """
+    Get the stored analysis results.
+    
+    Returns:
+        Analysis results dictionary if exists, None otherwise
+    """
+    return st.session_state.get("analysis_results")
+
+
+def set_analysis_results(results: Optional[dict]) -> None:
+    """
+    Store analysis results in session state.
+    
+    Args:
+        results: Analysis results dictionary or None to clear
+    """
+    set_state("analysis_results", results)
+
+
 def debug_state() -> None:
     """
     Display current session state for debugging purposes.

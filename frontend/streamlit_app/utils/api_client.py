@@ -409,6 +409,69 @@ class RelatAIClient:
         return response.json()
     
     # -------------------------------------------------------------------------
+    # Analysis Operations
+    # -------------------------------------------------------------------------
+    
+    def run_analysis(
+        self,
+        dataset_id: str,
+        mode: Optional[str] = None,
+        parameters: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
+        """
+        Execute statistical analysis on configured dataset.
+        
+        Performs correlation, multivariate, or auto-triage analysis based on
+        the specified mode or the dataset's configured analysis mode.
+        
+        Args:
+            dataset_id: Unique identifier for the dataset
+            mode: Optional analysis mode override:
+                - "correlation": Pairwise correlations
+                - "multivariate": Regression modeling
+                - "auto_triage": Anomaly detection and triage
+            parameters: Optional configuration overrides:
+                - selected_columns: list[str]
+                - anchor_columns: list[str]
+                - filters: dict[str, list]
+                - max_variables: int
+                - interaction_depth: int
+                - include_interactions: bool
+        
+        Returns:
+            Analysis result dictionary containing:
+                - dataset_id: str
+                - analysis_id: str (unique ID for this analysis run)
+                - analysis_mode: str
+                - configuration: dict (configuration used)
+                - cached: bool (whether result was from cache)
+                - result: dict (serialized analysis results with visualizations)
+        
+        Raises:
+            APIError: If analysis fails, dataset not found, or validation errors
+        
+        Note:
+            Results are cached by the backend. Identical configurations will
+            return cached results with cached=True in the response.
+        """
+        payload: dict[str, Any] = {}
+        
+        if mode is not None:
+            payload["mode"] = mode
+        
+        if parameters is not None:
+            payload["parameters"] = parameters
+        
+        # Analysis can take time, use extended timeout
+        response = self._make_request(
+            "POST",
+            f"/datasets/{dataset_id}/analyze",
+            json=payload if payload else None,
+            timeout=120  # 2 minute timeout for long-running analyses
+        )
+        return response.json()
+    
+    # -------------------------------------------------------------------------
     # Health & Status Operations
     # -------------------------------------------------------------------------
     
