@@ -27,6 +27,7 @@ from relat_ai.services.analysis.utils import (
 )
 from sklearn.cross_decomposition import PLSRegression
 from sklearn.metrics import r2_score
+from sklearn.model_selection import KFold, cross_val_score
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 
@@ -309,54 +310,14 @@ def _fit_regressions(
             continue
 
         if config.solver == "pls":
-            n_features = predictors.shape[1]
-            n_samples = len(design.index)
-            max_components = max(min(n_features, n_samples - 1), 1)
-            n_components = config.pls_components or max_components
-            n_components = min(n_components, max_components)
-            if n_components < 1:
-                LOGGER.warning(
-                    "Skipping PLS regression for response '%s' due to insufficient samples (%d)",
-                    config.response,
-                    n_samples,
-                )
-                continue
-
-            try:
-                model = PLSRegression(n_components=n_components, scale=True)
-                model.fit(predictors, y)
-            except ValueError as exc:
-                LOGGER.warning(
-                    "Skipping PLS regression for response '%s' due to model fitting error: %s",
-                    config.response,
-                    exc,
-                )
-                continue
-
-            predictions = model.predict(predictors)
-            if predictions.ndim > 1:
-                predictions = predictions.ravel()
-            r_squared = float(r2_score(y, predictions))
-            adjusted_r_squared = _adjusted_r_squared(r_squared, n_samples, n_components)
-            cohen_f2 = _cohen_f2(r_squared)
-
-            summaries.append(
-                ModelSummary(
-                    response=config.response,
-                    predictors=list(config.predictors),
-                    model_type="regression_pls",
-                    metrics=RegressionMetrics(
-                        r_squared=r_squared,
-                        adjusted_r_squared=adjusted_r_squared,
-                        aic=float("nan"),
-                        bic=float("nan"),
-                        cohen_f2=cohen_f2,
-                    ),
-                    sample_size=n_samples,
-                    notes=[f"n_components={n_components}"],
-                    diagnostics=RegressionDiagnostics(variance_inflation_factors=vif),
-                )
+            summary = _fit_pls_regression(
+                predictors,
+                y,
+                config,
+                vif=vif,
             )
+            if summary is not None:
+                summaries.append(summary)
             continue
 
         LOGGER.warning("Unsupported regression solver '%s' requested; skipping.", config.solver)
@@ -483,6 +444,116 @@ def _compute_partial_correlations(
         )
 
     return results
+
+
+def _fit_pls_regression(
+    predictors: pd.DataFrame,
+    response: pd.Series,
+    config: RegressionConfig,
+    *,
+    vif: dict[str, float],
+) -> ModelSummary | None:
+    n_samples = len(predictors.index)
+    n_features = predictors.shape[1]
+    max_components = max(min(n_features, n_samples - 1), 1)
+
+    if max_components < 1:
+        LOGGER.warning(
+            "Skipping PLS regression for response '%s' due to insufficient samples (%d)",
+            config.response,
+            n_samples,
+        )
+        return None
+
+    if config.pls_components is not None:
+        n_components = min(config.pls_components, max_components)
+    else:
+        n_components = _select_optimal_pls_components(
+            predictors,
+            response,
+            max_components,
+            random_state=config.random_state,
+        )
+
+    if n_components < 1:
+        LOGGER.warning(
+            "Skipping PLS regression for response '%s' due to insufficient samples (%d)",
+            config.response,
+            n_samples,
+        )
+        return None
+
+    try:
+        model = PLSRegression(n_components=n_components, scale=True)
+        model.fit(predictors, response)
+    except ValueError as exc:
+        LOGGER.warning(
+            "Skipping PLS regression for response '%s' due to model fitting error: %s",
+            config.response,
+            exc,
+        )
+        return None
+
+    predictions = model.predict(predictors)
+    if predictions.ndim > 1:
+        predictions = predictions.ravel()
+    r_squared = float(r2_score(response, predictions))
+    adjusted_r_squared = _adjusted_r_squared(r_squared, n_samples, n_components)
+    cohen_f2 = _cohen_f2(r_squared)
+
+    return ModelSummary(
+        response=config.response,
+        predictors=list(config.predictors),
+        model_type="regression_pls",
+        metrics=RegressionMetrics(
+            r_squared=r_squared,
+            adjusted_r_squared=adjusted_r_squared,
+            aic=float("nan"),
+            bic=float("nan"),
+            cohen_f2=cohen_f2,
+        ),
+        sample_size=n_samples,
+        notes=[f"n_components={n_components}"],
+        diagnostics=RegressionDiagnostics(variance_inflation_factors=vif),
+    )
+
+
+def _select_optimal_pls_components(
+    predictors: pd.DataFrame,
+    response: pd.Series,
+    max_components: int,
+    *,
+    random_state: int,
+) -> int:
+    if max_components <= 1:
+        return max_components
+
+    n_samples = len(predictors.index)
+    if n_samples < 3:
+        return min(max_components, 1)
+
+    n_splits = min(5, n_samples)
+    if n_splits < 2:
+        return min(max_components, 1)
+
+    kfold = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    best_components = 1
+    best_score = -np.inf
+
+    y_array = response.to_numpy()
+
+    for n_components in range(1, max_components + 1):
+        model = PLSRegression(n_components=n_components, scale=True)
+        try:
+            scores = cross_val_score(model, predictors, y_array, cv=kfold, scoring="r2")
+        except ValueError:
+            continue
+        mean_score = float(np.mean(scores))
+        if mean_score > best_score + np.finfo(float).eps:
+            best_score = mean_score
+            best_components = n_components
+
+    return best_components
 
 
 def _augment_interactions(
