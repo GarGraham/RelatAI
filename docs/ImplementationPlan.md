@@ -116,7 +116,7 @@ This update synchronizes the Implementation Plan with significant enhancements t
    - Enhance interaction term generation with configurable depth control
    - Implement effect size computations and multi-collinearity diagnostics (VIF)
 
-7. **Configuration & Filtering Layer**
+7. **Configuration & Filtering Layer** *(Completed)*
    - Build API endpoints to manage column selection (default all-selected), filtering, and analysis mode toggling (Correlation | Multivariate | Auto-Triage)
    - Implement template save/load functionality for repeatable workflows (column selections, filters, anchors, parameters)
    - Ensure validation of user inputs and dataset constraints
