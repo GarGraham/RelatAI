@@ -71,9 +71,18 @@ ClusterProfile = {
     {"feature":"Calibration Mean","importance":0.27}, ...
   ],
   "medoids": { "0": [row_idx,...], "1": [...], "2":[...] },  # representative samples
-  "by_time": [  # optional, if time column
-    {"cluster":2,"window":"2025-W10..W12","pct":0.73}
-  ]
+  "per_feature_stats": {
+    "0": {"Injection Time": {"mean": 3.2, "median": 3.1, "iqr": 0.8}, ...},
+    "1": {...},
+    "2": {...}
+  },
+  "time_slices": {
+    "window_unit": "week",
+    "summaries": [
+      {"window":"2025-W10..W12","cluster":2,"pct":0.73,
+       "n": 95, "trend":"increasing"}
+    ]
+  }
 }
 
 PCAExplain = {
@@ -180,9 +189,44 @@ UI result: under the pie charts, render:
 
 “What defines each cluster?” chips using the largest mean deltas
 
-“Representative rows” link (medoids)
+“Representative rows” link (medoids) plus profiling table (per_feature_stats)
 
-“Appears mostly during…” if by_time shows concentration
+Temporal chips sourced from time_slices summaries (“Appears mostly during…”)
+
+
+Implementation checklist (cluster profiling payload):
+
+1. Persist cluster membership in auto-triage
+   * Extend `ClusterInsight` (in `backend/relat_ai/services/analysis/auto_triage.py`) so it carries:
+     - `member_indices: list[int]` (row ids relative to the profiled frame) per cluster id
+     - `member_ids: list[str]` or similar if the ingestion pipeline exposes stable primary keys
+     - a `label_column`/`cluster_labels` vector to keep alignment with the dataframe for downstream routines.
+   * When `auto_triage.clusterize()` runs, stash the raw `labels_` from the clustering estimator on the insight object before any dataframe slicing/shuffling. Do **not** rely on recomputing labels.
+   * Update `compute_cluster_profile` to accept the persisted labels instead of deriving them from re-running the model. Use the stored `member_indices` to fetch rows for medoid reconstruction and profiling routines.
+
+2. Serialize richer structures in results
+   * In `backend/relat_ai/services/results.py`, augment `ClusterModel` (or introduce a sibling `ClusterProfileModel`) with fields for:
+     - `medoids: dict[str, list[int]]`
+     - `per_feature_stats: dict[str, dict[str, ClusterFeatureStats]]` where `ClusterFeatureStats` captures mean/median/std/iqr/count.
+     - `time_slices: TimeSliceSummary` encapsulating aggregation windows, cluster proportions, counts, and optional trend labels.
+     - `member_indices` / `member_ids` to allow front-end drill-downs.
+   * Ensure `to_dict()`/`model_dump()` serializes nested dataclasses/TypedDicts cleanly (use `jsonable_encoder` or pydantic models as needed).
+   * Document how medoids are computed (distance to centroid or stored representative indices) and confirm we rehydrate original rows when building response payloads.
+   * Capture per-feature stats by applying `df.loc[cluster_indices, feature].agg(["mean","median","std",q1,q3])` and store `iqr=q3-q1`. Persist each cluster’s stats under the cluster id key.
+   * Time-slice summaries: bucket by iso week (default) or configured granularity, compute `n` per cluster per bucket, and derive `pct = n / window_total`. Add `trend` via rolling comparison (e.g., direction of `pct` change over last 3 buckets).
+   * Provide helper functions in `results.py` to convert numpy types to native Python before serialization to avoid JSON issues.
+
+3. Streamlit auto-triage surface
+   * Update `frontend/streamlit_app/components/autotriage_view.py` to read the new payload keys and render:
+     - “Representative Samples” table showing medoid rows (include key features, timestamp, and label).
+     - “Cluster Profiling” expandable section with per-feature stats (mean/median/std/iqr deltas).
+     - Temporal chips: e.g., `st.status`/`st.metric` style badges summarizing `time_slices.summaries` and highlighting dominant windows.
+     - Inline tooltips describing how medoids were selected and how statistics are computed.
+
+4. Test coverage
+   * Backend: extend `tests/backend/services/analysis/test_auto_triage.py` (or create new coverage) to assert `ClusterInsight` retains labels, medoids, per-feature stats, and time-slice structures. Mock dataframe to verify serialization via `results.ClusterModel`.
+   * Frontend: add a smoke test (e.g., `tests/frontend/test_autotriage_view.py`) wiring a sample payload through Streamlit component to ensure new tables render without exceptions (use `streamlit.testing.v1.AppTest` helper).
+   * Update any snapshot fixtures to include the additional keys, and add regression cases for missing optional fields (`time_slices` absent, medoids empty).
 
 1.2 PCA narrative + drill-downs
 def interpret_pca(pca, feature_names, top=5) -> dict:
