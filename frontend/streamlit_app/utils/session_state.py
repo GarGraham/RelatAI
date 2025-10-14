@@ -257,3 +257,57 @@ def debug_state() -> None:
                 st.json(category_state)
             else:
                 st.write("  _(No state)_")
+
+
+# =========================================================================
+# Helper Functions for Phase 3+ Components
+# =========================================================================
+
+def get_selected_dataset() -> Optional[dict]:
+    """
+    Get the currently selected dataset metadata.
+    
+    Returns:
+        Dictionary with dataset metadata including 'id', 'name', etc.
+        None if no dataset is loaded.
+    """
+    dataset_id = get_current_dataset_id()
+    dataset_metadata = get_state('dataset_metadata')
+    
+    if not dataset_id or not dataset_metadata:
+        return None
+    
+    # Return standardized format expected by Analysis page
+    return {
+        'id': dataset_id,
+        'name': dataset_metadata.get('filename', 'Unknown'),
+        'row_count': dataset_metadata.get('row_count', 0),
+        'column_count': dataset_metadata.get('column_count', 0),
+    }
+
+
+def get_analysis_mode() -> Optional[str]:
+    """
+    Get the currently selected analysis mode.
+    
+    Returns:
+        Analysis mode string ('correlation', 'multivariate', 'auto_triage')
+        or None if not configured.
+    """
+    config = get_configuration()
+    if not config:
+        return get_state('analysis_mode', 'correlation')
+    
+    return config.get('analysis_mode', 'correlation')
+
+
+def get_current_config() -> Optional[dict]:
+    """
+    Get the current analysis configuration.
+    
+    Alias for get_configuration() for consistency with Analysis page expectations.
+    
+    Returns:
+        Configuration dictionary or None if not configured.
+    """
+    return get_configuration()

@@ -247,7 +247,8 @@ def _prepare_numeric_matrix(
 
     missing_ratio = numeric.isna().mean().to_dict()
 
-    filled = numeric.fillna(numeric.median(numeric_only=True), inplace=False)
+    # Per-column median imputation with fallback to 0 for columns that are entirely NaN
+    filled = numeric.apply(lambda col: col.fillna(col.median() if col.notna().any() else 0.0))
 
     non_constant_columns = [
         column for column in filled.columns if not np.isclose(filled[column].std(ddof=0), 0.0)

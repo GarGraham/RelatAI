@@ -11,7 +11,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.api_client import APIClient
+from utils.api_client import RelatAIClient
 from utils.session_state import get_selected_dataset
 from utils.export_utils import export_audit_log_csv
 from components.audit_viewer import (
@@ -66,7 +66,7 @@ def main():
     dataset = get_selected_dataset()
     
     try:
-        client = APIClient()
+        client = RelatAIClient()
         
         if scope == "Current Dataset" and dataset:
             dataset_id = dataset.get('id')

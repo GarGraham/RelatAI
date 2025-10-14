@@ -192,7 +192,7 @@ def export_visualization_data(
         if viz_type == "coefficients":
             return export_multivariate_csv(results)
     
-    elif mode == "auto-triage":
+    elif mode == "auto_triage" or mode == "auto-triage":
         if viz_type == "rankings":
             return export_autotriage_csv(results)
         elif viz_type == "pca":
@@ -242,7 +242,7 @@ def create_export_package(
         if csv_data:
             package[f"{base_name}_coefficients.csv"] = csv_data
     
-    elif mode == "auto-triage":
+    elif mode == "auto_triage" or mode == "auto-triage":
         csv_data = export_autotriage_csv(results)
         if csv_data:
             package[f"{base_name}_suspicion_rankings.csv"] = csv_data

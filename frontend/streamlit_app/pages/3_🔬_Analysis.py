@@ -11,7 +11,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from utils.api_client import APIClient
+from utils.api_client import RelatAIClient
 from utils.session_state import (
     get_selected_dataset,
     get_analysis_mode,
@@ -138,7 +138,7 @@ def execute_analysis(dataset_id: str, mode: str, config: dict):
     
     try:
         # Initialize API client
-        client = APIClient()
+        client = RelatAIClient()
         
         # Start analysis
         status_text.text("🔄 Initiating analysis...")
@@ -214,7 +214,7 @@ def display_results(results: dict, mode: str):
     st.divider()
     
     # Extract and display confidence flags
-    flags = extract_flags_from_result(results, mode)
+    flags = extract_flags_from_result(results)
     
     if flags:
         st.markdown("### ⚠️ Quality Indicators")
@@ -237,14 +237,19 @@ def display_results(results: dict, mode: str):
     # Mode-specific visualizations
     st.markdown("### 📊 Detailed Results")
     
+    # Extract the inner 'result' field which contains the actual analysis data
+    result_data = results.get('result', results)
+    
     if mode == "correlation":
-        render_correlation_results(results)
+        render_correlation_results(result_data)
     
     elif mode == "multivariate":
-        render_multivariate_results(results)
+        render_multivariate_results(result_data)
     
-    elif mode == "auto-triage":
-        render_autotriage_results(results)
+    elif mode == "auto_triage" or mode == "auto-triage":
+        # For auto-triage, extract the nested auto_triage_result object
+        auto_triage_data = result_data.get('auto_triage_result', {})
+        render_autotriage_results(auto_triage_data)
     
     else:
         st.warning(f"Visualization not available for mode: {mode}")
@@ -310,7 +315,7 @@ def render_export_options(results: dict, mode: str):
             elif mode == "multivariate":
                 csv_data = export_multivariate_csv(results)
                 csv_label = "📊 CSV (Coefficients)"
-            elif mode == "auto-triage":
+            elif mode == "auto_triage" or mode == "auto-triage":
                 csv_data = export_autotriage_csv(results)
                 csv_label = "📊 CSV (Rankings)"
             
@@ -403,7 +408,7 @@ def render_export_options(results: dict, mode: str):
                     use_container_width=True
                 )
             
-            elif mode == "auto-triage":
+            elif mode == "auto_triage" or mode == "auto-triage":
                 table_data = export_autotriage_csv(results)
                 st.download_button(
                     label="📊 Suspicion Rankings (CSV)",

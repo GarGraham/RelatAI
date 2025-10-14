@@ -17,10 +17,11 @@ def render_autotriage_results(result_data: Dict[str, Any]) -> None:
     
     Args:
         result_data: Auto-triage result dictionary containing:
-            - suspicion_rankings: list of column suspicions
-            - pca_results: dict with PCA data
-            - change_points: dict with change-point data
-            - cluster_summary: dict with clustering data
+            - suspicion_rankings: list of ranked insights
+            - pca_components: list of PCA component data
+            - change_points: list of change-point detections
+            - clusters: list of cluster summaries
+            - residual_forensics: list of residual analysis results
     """
     if not result_data:
         st.warning("No auto-triage data available")
@@ -38,53 +39,56 @@ def render_autotriage_results(result_data: Dict[str, Any]) -> None:
         render_suspicion_rankings(result_data.get('suspicion_rankings', []))
     
     with tab2:
-        render_pca_biplot(result_data.get('pca_results', {}))
+        render_pca_biplot(result_data.get('pca_components', []))
     
     with tab3:
-        render_change_points(result_data.get('change_points', {}))
+        render_change_points(result_data.get('change_points', []))
     
     with tab4:
-        render_clusters(result_data.get('cluster_summary', {}))
+        render_clusters(result_data.get('clusters', []))
 
 
 def render_suspicion_rankings(rankings: List[Dict[str, Any]]) -> None:
-    """Render suspicion rankings table with scoring breakdown.
+    """Render suspicion rankings table.
     
     Args:
-        rankings: List of suspicion ranking dictionaries
+        rankings: List of RankedInsightModel dictionaries from backend with:
+            - label: str (column or feature name)
+            - score: float (0.0 to 1.0)
+            - drivers: list of str (reasons for suspicion)
+            - category: str
+            - method: str (optional)
     """
-    st.subheader("Column Suspicion Rankings")
+    st.subheader("Suspicion Rankings")
     
     if not rankings:
         st.info("No suspicion rankings available")
         return
     
-    # Convert to DataFrame
+    # Convert to DataFrame and sort by score
     df = pd.DataFrame(rankings)
+    df = df.sort_values('score', ascending=False)
     
-    # Sort by total score
-    df = df.sort_values('total_score', ascending=False)
+    # Normalize score to percentage and create severity categories
+    df['score_pct'] = df['score'] * 100
     
-    # Create severity categories
-    def categorize_score(score):
-        if score >= 70:
+    def categorize_score(score_pct):
+        if score_pct >= 70:
             return "🔴 High"
-        elif score >= 40:
+        elif score_pct >= 40:
             return "🟡 Medium"
         else:
             return "🟢 Low"
     
-    df['Severity'] = df['total_score'].apply(categorize_score)
+    df['Severity'] = df['score_pct'].apply(categorize_score)
     
     # Format display columns
     display_df = pd.DataFrame({
         'Rank': range(1, len(df) + 1),
-        'Column': df['column_name'],
-        'Total Score': df['total_score'].apply(lambda x: f"{x:.1f}"),
+        'Target': df['label'],
+        'Score': df['score_pct'].apply(lambda x: f"{x:.1f}%"),
         'Severity': df['Severity'],
-        'Missing %': df.get('missing_pct', pd.Series([0]*len(df))).apply(lambda x: f"{x:.1f}%"),
-        'Outliers': df.get('outlier_count', pd.Series([0]*len(df))),
-        'Flags': df.get('flag_count', pd.Series([0]*len(df)))
+        'Category': df.get('category', 'general')
     })
     
     st.dataframe(
@@ -94,187 +98,157 @@ def render_suspicion_rankings(rankings: List[Dict[str, Any]]) -> None:
         height=400
     )
     
-    # Scoring breakdown for selected column
+    # Detailed breakdown for selected item
     st.divider()
-    st.markdown("#### Scoring Breakdown")
+    st.markdown("#### Detailed Breakdown")
     
-    selected_col = st.selectbox(
-        "Select column for detailed breakdown",
-        options=df['column_name'].tolist(),
+    selected_item = st.selectbox(
+        "Select item for detailed breakdown",
+        options=df['label'].tolist(),
         key="suspicion_detail"
     )
     
-    if selected_col:
-        row = df[df['column_name'] == selected_col].iloc[0]
+    if selected_item:
+        row = df[df['label'] == selected_item].iloc[0]
         
-        col1, col2 = st.columns(2)
+        st.markdown(f"**Target:** {selected_item}")
+        st.markdown(f"**Score:** {row['score_pct']:.1f}%")
+        st.markdown(f"**Category:** {row.get('category', 'general')}")
         
-        with col1:
-            st.markdown("**Score Components:**")
-            
-            components = {
-                'Missing Data': row.get('missing_score', 0),
-                'Outliers': row.get('outlier_score', 0),
-                'Distribution': row.get('distribution_score', 0),
-                'Correlation': row.get('correlation_score', 0),
-                'Pattern': row.get('pattern_score', 0)
-            }
-            
-            for component, score in components.items():
-                st.text(f"{component}: {score:.1f}")
+        # Display drivers (reasons for suspicion)
+        drivers = row.get('drivers', [])
+        if drivers:
+            st.markdown("**Reasons for Suspicion:**")
+            for driver in drivers:
+                st.markdown(f"- {driver}")
+        else:
+            st.info("No detailed drivers available")
         
-        with col2:
-            # Create pie chart of score components
-            fig = go.Figure(data=[go.Pie(
-                labels=list(components.keys()),
-                values=list(components.values()),
-                hole=0.3
-            )])
-            
-            fig.update_layout(
-                title=f"Score Components for {selected_col}",
-                height=300
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
+        # Additional metadata
+        metadata = row.get('metadata', {})
+        if metadata:
+            with st.expander("Additional Details"):
+                st.json(metadata)
     
     # Summary statistics
     with st.expander("📊 Summary"):
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            high_suspicion = (df['total_score'] >= 70).sum()
+            high_suspicion = (df['score_pct'] >= 70).sum()
             st.metric("High Suspicion", high_suspicion)
         
         with col2:
-            medium_suspicion = ((df['total_score'] >= 40) & (df['total_score'] < 70)).sum()
+            medium_suspicion = ((df['score_pct'] >= 40) & (df['score_pct'] < 70)).sum()
             st.metric("Medium Suspicion", medium_suspicion)
         
         with col3:
-            low_suspicion = (df['total_score'] < 40).sum()
+            low_suspicion = (df['score_pct'] < 40).sum()
             st.metric("Low Suspicion", low_suspicion)
 
 
-def render_pca_biplot(pca_data: Dict[str, Any]) -> None:
-    """Render PCA biplot showing observations and loadings.
+def render_pca_biplot(pca_components: List[Dict[str, Any]]) -> None:
+    """Render PCA component information and top contributors.
     
     Args:
-        pca_data: Dictionary with PCA results
+        pca_components: List of PCA component dictionaries from backend with:
+            - component: int
+            - explained_variance_ratio: float
+            - top_contributors: list of {feature: str, loading: float}
     """
-    st.subheader("PCA Biplot")
+    st.subheader("PCA Components")
     
-    if not pca_data or 'scores' not in pca_data:
+    if not pca_components:
         st.info("PCA data not available")
         return
     
-    scores = np.array(pca_data['scores'])
-    loadings = np.array(pca_data.get('loadings', []))
-    explained_variance = pca_data.get('explained_variance', [])
-    feature_names = pca_data.get('feature_names', [])
+    # Display variance explained
+    st.markdown("**Explained Variance by Component:**")
     
-    if len(scores) == 0:
-        st.info("No PCA scores available")
-        return
+    variance_data = []
+    for comp in pca_components:
+        variance_data.append({
+            'Component': f"PC{comp['component']}",
+            'Variance Explained': f"{comp['explained_variance_ratio'] * 100:.2f}%"
+        })
     
-    # Component selection
-    n_components = scores.shape[1] if len(scores.shape) > 1 else 1
+    if variance_data:
+        df_variance = pd.DataFrame(variance_data)
+        st.dataframe(df_variance, use_container_width=True, hide_index=True)
     
-    if n_components < 2:
-        st.warning("Need at least 2 principal components for biplot")
-        return
+    # Display top contributors for each component
+    st.divider()
+    st.markdown("**Top Contributing Features:**")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        pc_x = st.selectbox("X-axis", options=range(1, n_components + 1), index=0, key="pca_x")
-    
-    with col2:
-        pc_y = st.selectbox("Y-axis", options=range(1, n_components + 1), index=1 if n_components > 1 else 0, key="pca_y")
-    
-    # Extract selected components (convert to 0-indexed)
-    pc_x_idx = pc_x - 1
-    pc_y_idx = pc_y - 1
-    
-    x_scores = scores[:, pc_x_idx]
-    y_scores = scores[:, pc_y_idx]
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Add observation points
-    fig.add_trace(go.Scatter(
-        x=x_scores,
-        y=y_scores,
-        mode='markers',
-        marker=dict(size=6, color='blue', opacity=0.6),
-        name='Observations',
-        hovertemplate='Obs %{pointNumber}<br>PC%{x}: %{x:.3f}<br>PC%{y}: %{y:.3f}<extra></extra>'
-    ))
-    
-    # Add loading vectors if available
-    if len(loadings) > 0 and len(feature_names) > 0:
-        x_loadings = loadings[:, pc_x_idx]
-        y_loadings = loadings[:, pc_y_idx]
-        
-        # Scale loadings for visibility
-        max_score = max(abs(x_scores).max(), abs(y_scores).max())
-        max_loading = max(abs(x_loadings).max(), abs(y_loadings).max())
-        scale = max_score / max_loading * 0.8 if max_loading > 0 else 1
-        
-        for i, name in enumerate(feature_names):
-            fig.add_annotation(
-                x=x_loadings[i] * scale,
-                y=y_loadings[i] * scale,
-                ax=0,
-                ay=0,
-                xref='x',
-                yref='y',
-                axref='x',
-                ayref='y',
-                text=name,
-                showarrow=True,
-                arrowhead=2,
-                arrowsize=1,
-                arrowwidth=2,
-                arrowcolor='red',
-                font=dict(size=10, color='red')
-            )
-    
-    # Add reference lines
-    fig.add_hline(y=0, line_dash="dash", line_color="gray", opacity=0.5)
-    fig.add_vline(x=0, line_dash="dash", line_color="gray", opacity=0.5)
-    
-    # Update layout
-    x_var = explained_variance[pc_x_idx] if pc_x_idx < len(explained_variance) else 0
-    y_var = explained_variance[pc_y_idx] if pc_y_idx < len(explained_variance) else 0
-    
-    fig.update_layout(
-        title="PCA Biplot",
-        xaxis_title=f"PC{pc_x} ({x_var:.1f}% variance)",
-        yaxis_title=f"PC{pc_y} ({y_var:.1f}% variance)",
-        height=600,
-        showlegend=True
+    selected_component = st.selectbox(
+        "Select Component",
+        options=[f"PC{comp['component']}" for comp in pca_components],
+        key="pca_component_select"
     )
     
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Explained variance table
-    if explained_variance:
-        with st.expander("📊 Explained Variance"):
-            variance_df = pd.DataFrame({
-                'Component': [f"PC{i+1}" for i in range(len(explained_variance))],
-                'Variance %': explained_variance,
-                'Cumulative %': np.cumsum(explained_variance)
-            })
+    if selected_component:
+        comp_idx = int(selected_component.replace('PC', '')) - 1
+        if comp_idx < len(pca_components):
+            component = pca_components[comp_idx]
+            contributors = component.get('top_contributors', [])
             
-            st.dataframe(variance_df, use_container_width=True, hide_index=True)
+            if contributors:
+                contrib_data = pd.DataFrame([
+                    {
+                        'Feature': contrib['feature'],
+                        'Loading': f"{contrib['loading']:.4f}",
+                        'Abs Loading': abs(contrib['loading'])
+                    }
+                    for contrib in contributors
+                ])
+                
+                # Sort by absolute loading
+                contrib_data = contrib_data.sort_values('Abs Loading', ascending=False)
+                contrib_data = contrib_data.drop('Abs Loading', axis=1)
+                
+                st.dataframe(contrib_data, use_container_width=True, hide_index=True)
+                
+                # Create bar chart of loadings
+                fig = go.Figure(data=[
+                    go.Bar(
+                        x=[c['loading'] for c in contributors],
+                        y=[c['feature'] for c in contributors],
+                        orientation='h',
+                        marker=dict(
+                            color=[c['loading'] for c in contributors],
+                            colorscale='RdBu',
+                            cmid=0
+                        )
+                    )
+                ])
+                
+                fig.update_layout(
+                    title=f"Feature Loadings for {selected_component}",
+                    xaxis_title="Loading",
+                    yaxis_title="Feature",
+                    height=400,
+                    yaxis={'categoryorder': 'total ascending'}
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No contributor data available for this component")
+    
+    # Summary stats
+    with st.expander("📊 Summary"):
+        total_variance = sum(comp['explained_variance_ratio'] for comp in pca_components)
+        st.metric("Total Variance Explained", f"{total_variance * 100:.2f}%")
+        st.metric("Number of Components", len(pca_components))
 
 
-def render_change_points(change_data: Dict[str, Any]) -> None:
-    """Render change-point detection charts.
+def render_change_points(change_data: List[Dict[str, Any]]) -> None:
+    """Render change-point detection information.
     
     Args:
-        change_data: Dictionary with change-point detection results
+        change_data: List of change-point detection results from backend with:
+            - column: str
+            - method: str
+            - locations: list of int (indices where changes detected)
     """
     st.subheader("Change-Point Detection")
     
@@ -282,96 +256,79 @@ def render_change_points(change_data: Dict[str, Any]) -> None:
         st.info("Change-point data not available")
         return
     
-    detections = change_data.get('detections', [])
-    
-    if not detections:
-        st.info("No change points detected")
-        return
+    # Group by column
+    changes_by_column = {}
+    for change in change_data:
+        col = change['column']
+        if col not in changes_by_column:
+            changes_by_column[col] = []
+        changes_by_column[col].append(change)
     
     # Column selector
-    columns = list(set(d['column'] for d in detections))
     selected_col = st.selectbox(
         "Select column",
-        options=columns,
+        options=list(changes_by_column.keys()),
         key="changepoint_col"
     )
     
-    # Filter detections for selected column
-    col_detections = [d for d in detections if d['column'] == selected_col]
-    
-    if not col_detections:
-        st.info(f"No change points for {selected_col}")
-        return
-    
-    # Get time series data
-    time_series = change_data.get('time_series', {}).get(selected_col, [])
-    
-    if not time_series:
-        st.warning("Time series data not available")
-        return
-    
-    # Create time series plot
-    fig = go.Figure()
-    
-    # Add time series line
-    indices = list(range(len(time_series)))
-    
-    fig.add_trace(go.Scatter(
-        x=indices,
-        y=time_series,
-        mode='lines',
-        line=dict(color='blue'),
-        name='Values'
-    ))
-    
-    # Add change points
-    for detection in col_detections:
-        idx = detection.get('index', 0)
-        severity = detection.get('severity', 'info')
+    if selected_col:
+        col_changes = changes_by_column[selected_col]
         
-        color = {
-            'error': 'red',
-            'warning': 'orange',
-            'info': 'yellow'
-        }.get(severity, 'yellow')
-        
-        fig.add_vline(
-            x=idx,
-            line_dash="dash",
-            line_color=color,
-            annotation_text=f"CP (p={detection.get('p_value', 0):.3f})",
-            annotation_position="top"
-        )
+        # Display change points for this column
+        for change in col_changes:
+            method = change.get('method', 'Unknown')
+            locations = change.get('locations', [])
+            
+            st.markdown(f"**Method:** {method}")
+            
+            if locations:
+                st.markdown(f"**Detected {len(locations)} change point(s) at indices:**")
+                
+                # Create DataFrame for better display
+                df = pd.DataFrame({
+                    'Change Point Index': locations
+                })
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+                # Simple visualization of change point locations
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(
+                    x=locations,
+                    y=[1] * len(locations),
+                    mode='markers',
+                    marker=dict(size=12, color='red', symbol='line-ns'),
+                    name='Change Points',
+                    hovertemplate='Index: %{x}<extra></extra>'
+                ))
+                
+                fig.update_layout(
+                    title=f"Change Point Locations in {selected_col}",
+                    xaxis_title="Data Index",
+                    yaxis_visible=False,
+                    height=200,
+                    showlegend=False
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"No change points detected using {method} method")
+            
+            st.divider()
     
-    fig.update_layout(
-        title=f"Change Points in {selected_col}",
-        xaxis_title="Index",
-        yaxis_title="Value",
-        height=400
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Change point details table
-    st.markdown("#### Detected Change Points")
-    
-    details_df = pd.DataFrame([{
-        'Index': d.get('index', 0),
-        'P-Value': f"{d.get('p_value', 0):.4f}",
-        'Severity': d.get('severity', 'info'),
-        'Mean Before': f"{d.get('mean_before', 0):.3f}",
-        'Mean After': f"{d.get('mean_after', 0):.3f}",
-        'Change %': f"{d.get('change_pct', 0):.1f}%"
-    } for d in col_detections])
-    
-    st.dataframe(details_df, use_container_width=True, hide_index=True)
+    # Summary stats
+    with st.expander("📊 Summary"):
+        total_changes = sum(len(change.get('locations', [])) for change in change_data)
+        st.metric("Total Change Points Detected", total_changes)
+        st.metric("Columns Analyzed", len(changes_by_column))
 
 
-def render_clusters(cluster_data: Dict[str, Any]) -> None:
-    """Render cluster visualization and summary.
+def render_clusters(cluster_data: List[Dict[str, Any]]) -> None:
+    """Render cluster analysis summary.
     
     Args:
-        cluster_data: Dictionary with clustering results
+        cluster_data: List of cluster summaries from backend with:
+            - method: str (e.g., "kmeans", "hierarchical")
+            - cluster_sizes: dict mapping cluster_id to size
     """
     st.subheader("Cluster Analysis")
     
@@ -379,88 +336,49 @@ def render_clusters(cluster_data: Dict[str, Any]) -> None:
         st.info("Cluster data not available")
         return
     
-    labels = cluster_data.get('labels', [])
-    centroids = cluster_data.get('centroids', [])
-    
-    if not labels:
-        st.info("No cluster assignments available")
-        return
-    
-    # Get embedding coordinates (from PCA or other dimensionality reduction)
-    coords = cluster_data.get('coordinates', [])
-    
-    if not coords or len(coords) == 0:
-        st.warning("Coordinate data not available for visualization")
-        return
-    
-    coords = np.array(coords)
-    labels = np.array(labels)
-    
-    # Create scatter plot
-    fig = px.scatter(
-        x=coords[:, 0],
-        y=coords[:, 1],
-        color=labels.astype(str),
-        title="Cluster Visualization",
-        labels={'x': 'Dimension 1', 'y': 'Dimension 2', 'color': 'Cluster'},
-        height=500
-    )
-    
-    # Add centroids if available
-    if centroids:
-        centroids = np.array(centroids)
-        fig.add_trace(go.Scatter(
-            x=centroids[:, 0],
-            y=centroids[:, 1],
-            mode='markers',
-            marker=dict(
-                size=15,
-                color='black',
-                symbol='x',
-                line=dict(width=2, color='white')
-            ),
-            name='Centroids',
-            showlegend=True
-        ))
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Cluster summary
-    st.markdown("#### Cluster Summary")
-    
-    unique_labels = np.unique(labels)
-    summary_data = []
-    
-    for label in unique_labels:
-        mask = labels == label
-        count = mask.sum()
-        pct = (count / len(labels)) * 100
+    # Display each clustering result
+    for cluster_result in cluster_data:
+        method = cluster_result.get('method', 'Unknown')
+        cluster_sizes = cluster_result.get('cluster_sizes', {})
         
-        summary_data.append({
-            'Cluster': f"Cluster {label}",
-            'Size': count,
-            'Percentage': f"{pct:.1f}%"
-        })
+        st.markdown(f"**Method:** {method}")
+        
+        if cluster_sizes:
+            # Convert to DataFrame for display
+            df = pd.DataFrame([
+                {
+                    'Cluster ID': cluster_id,
+                    'Size': size,
+                    'Percentage': f"{(size / sum(cluster_sizes.values())) * 100:.1f}%"
+                }
+                for cluster_id, size in cluster_sizes.items()
+            ])
+            
+            # Sort by cluster ID
+            df = df.sort_values('Cluster ID')
+            
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            with col2:
+                # Pie chart of cluster distribution
+                fig = px.pie(
+                    df,
+                    values='Size',
+                    names='Cluster ID',
+                    title=f"Cluster Distribution ({method})"
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Summary metrics
+            st.caption(f"**Total clusters:** {len(cluster_sizes)} | **Total observations:** {sum(cluster_sizes.values())}")
+        else:
+            st.info(f"No cluster size data available for {method}")
+        
+        st.divider()
     
-    summary_df = pd.DataFrame(summary_data)
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        st.dataframe(summary_df, use_container_width=True, hide_index=True)
-    
-    with col2:
-        # Pie chart of cluster sizes
-        fig_pie = px.pie(
-            summary_df,
-            values='Size',
-            names='Cluster',
-            title="Cluster Distribution"
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
-    
-    # Silhouette score if available
-    silhouette = cluster_data.get('silhouette_score')
-    if silhouette is not None:
-        st.metric("Silhouette Score", f"{silhouette:.3f}")
-        st.caption("Range: [-1, 1]. Higher is better. >0.5 indicates good clustering.")
+    # Overall summary
+    with st.expander("📊 Summary"):
+        st.metric("Clustering Methods Used", len(cluster_data))

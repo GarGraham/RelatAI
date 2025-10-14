@@ -23,7 +23,7 @@ def render_ai_summary(result_data: Dict[str, Any], analysis_mode: str) -> None:
             _render_correlation_summary(result_data)
         elif analysis_mode == "multivariate":
             _render_multivariate_summary(result_data)
-        elif analysis_mode == "auto-triage":
+        elif analysis_mode == "auto_triage" or analysis_mode == "auto-triage":
             _render_autotriage_summary(result_data)
         else:
             st.info("Summary not available for this analysis mode")

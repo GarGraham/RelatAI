@@ -362,9 +362,8 @@ def main():
         
         # Navigation
         st.subheader("🧭 Next Steps")
-        if st.button("🔬 Run Analysis", use_container_width=True):
-            st.info("Analysis page coming in Phase 3!")
-            # st.switch_page("pages/3_🔬_Analysis.py")
+        if st.button("🔬 Run Analysis", use_container_width=True, type="primary"):
+            st.switch_page("pages/3_🔬_Analysis.py")
         
         if st.button("📊 Back to Upload", use_container_width=True):
             st.switch_page("pages/1_📊_Dataset_Upload.py")
