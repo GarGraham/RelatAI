@@ -7,7 +7,7 @@ from typing import Any, Sequence
 
 from pydantic import BaseModel, Field
 
-from .models import AnalysisMode
+from .models import AnalysisMode, DatasetConfiguration
 
 
 def _utcnow() -> datetime:
@@ -232,9 +232,41 @@ class SerializedAnalysisResult(BaseModel):
     cached_at: datetime = Field(default_factory=_utcnow)
 
 
+class AnalysisParameterOverrides(BaseModel):
+    """Optional configuration tweaks applied for a single analysis run."""
+
+    selected_columns: list[str] | None = None
+    anchor_columns: list[str] | None = None
+    filters: dict[str, list[Any]] | None = None
+    max_variables: int | None = Field(default=None, ge=1)
+    interaction_depth: int | None = Field(default=None, ge=1)
+    include_interactions: bool | None = None
+
+
+class AnalysisRunRequest(BaseModel):
+    """Request payload accepted by the analysis execution endpoint."""
+
+    mode: AnalysisMode | None = None
+    parameters: AnalysisParameterOverrides | None = None
+
+
+class AnalysisResultResponse(BaseModel):
+    """Structured response returned after executing an analysis run."""
+
+    dataset_id: str
+    analysis_id: str
+    analysis_mode: AnalysisMode
+    configuration: DatasetConfiguration
+    cached: bool = False
+    result: SerializedAnalysisResult
+
+
 __all__ = [
     "AISummaryModel",
     "AutoTriageResultModel",
+    "AnalysisParameterOverrides",
+    "AnalysisResultResponse",
+    "AnalysisRunRequest",
     "ChangePointModel",
     "CorrelationExtrasANOVAModel",
     "CorrelationExtrasChiSquareModel",
