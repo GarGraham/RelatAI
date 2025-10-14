@@ -135,8 +135,15 @@ div[data-testid="stMetricLabel"] {
    ======================================================================== */
 
 section[data-testid="stSidebar"] {
-    background-color: var(--surface-color);
-    border-right: 1px solid #E5E7EB;
+    /* Removed background-color override to respect Streamlit's theme settings */
+    border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    section[data-testid="stSidebar"] {
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
 }
 
 section[data-testid="stSidebar"] button {

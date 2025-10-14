@@ -150,7 +150,7 @@ class RelatAIClient:
             APIError: If upload fails or file is rejected
         """
         files = {"file": (filename, file, "application/octet-stream")}
-        response = self._make_request("POST", "/datasets", files=files)
+        response = self._make_request("POST", "/datasets/upload", files=files)
         return response.json()
     
     def get_dataset(self, dataset_id: str) -> dict[str, Any]:

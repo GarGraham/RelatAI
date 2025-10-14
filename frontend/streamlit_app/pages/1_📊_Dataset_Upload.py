@@ -215,9 +215,23 @@ if uploaded_file is not None:
                 )
                 
                 # Store in session state
-                dataset_id = result.get('dataset_id')
-                st.session_state.dataset_metadata = result
-                st.session_state.dataset_profile = result.get('profile', {})
+                # Backend returns: {metadata: {dataset_id, name, ...}, profile: {...}}
+                metadata = result.get('metadata', {})
+                profile = result.get('profile', {})
+                dataset_id = metadata.get('dataset_id')
+                
+                # Flatten metadata for easier access in other pages
+                flattened_metadata = {
+                    'dataset_id': dataset_id,
+                    'filename': metadata.get('original_filename', metadata.get('name', 'Unknown')),
+                    'row_count': metadata.get('row_count', 0),
+                    'column_count': metadata.get('column_count', 0),
+                    'file_size_bytes': metadata.get('file_size_bytes', 0),
+                    'uploaded_at': metadata.get('uploaded_at'),
+                }
+                
+                st.session_state.dataset_metadata = flattened_metadata
+                st.session_state.dataset_profile = profile
                 
                 # Load dataset context
                 load_dataset_context(dataset_id)
