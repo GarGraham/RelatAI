@@ -11,6 +11,31 @@ import plotly.graph_objects as go
 from typing import List, Dict, Any, Optional
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Front-end migration guidance
+# ---------------------------------------------------------------------------
+#
+# The backend will start emitting structured ``SuspicionItem`` /
+# ``ClusterProfile`` / ``PCAExplain`` / ``ChangePointReport`` objects (see
+# ``docs/DataUnderstanding.md``).  To migrate this component:
+#
+# * Suspicion tab – prefer the new ``target`` / ``top_signals`` fields and show
+#   contribution breakdowns inline.  Gate with ``st.session_state.get("rich_autotriage")``
+#   so older caches using ``RankedInsightModel`` still render.
+# * PCA tab – expect a single ``pca_explain`` object with ``variance`` and
+#   ``loadings`` tables.  Keep support for the legacy ``pca_components`` list
+#   until the feature flag is global.
+# * Change-points tab – iterate ``change_point_reports`` and render segment
+#   summaries plus context chips; fall back to the current ``change_points``
+#   structure when missing.
+# * Cluster tab – hydrate from ``cluster_profile`` (sizes, top differences,
+#   medoids, optional ``by_time``).  Retain the existing aggregated view for
+#   caches lacking the richer payload.
+# * Add a temporary ``supports_structured_autotriage`` toggle so each tab can opt
+#   into the new schema independently during QA.
+#
+# Remove the compatibility branches once the old models are deprecated.
+
 
 def render_autotriage_results(result_data: Dict[str, Any]) -> None:
     """Render complete auto-triage analysis results with all visualizations.

@@ -26,6 +26,39 @@ SuspicionItem = {
   "flags": ["collinearity","low_n"] # quality/confidence flags
 }
 
+### How these map to existing response models
+
+`SuspicionItem` is intended to replace the thinner `RankedInsightModel` that is
+currently emitted from `backend/relat_ai/core/results.py`.  The existing model
+has a `label`, `score`, and loose `metadata` bag; the richer structure above
+would move the `label` → `target`, keep `score` as-is, move `drivers` into
+`top_signals`, and break the old `metadata` field into first-class `contrib`,
+`links`, and `flags`.  Downstream code should treat the new object as a superset
+of the existing insight with backwards compatibility provided by folding the
+old `metadata` keys into the new nested dictionaries when needed.  The
+`RankedInsightModel` class remains as the compatibility shim until all clients
+understand the expanded structure.
+
+`ClusterProfile`, `PCAExplain`, and `ChangePointReport` correspond to the
+cluster, PCA, and change-point sections on `AutoTriageResultModel`.  Today those
+fields are thin (`ClusterModel`, `PCAComponentModel`, `ChangePointModel`).  The
+plan is to evolve `AutoTriageResultModel` so that:
+
+* `clusters: list[ClusterModel]` becomes a single `ClusterProfile` (with the
+  existing size counts exposed as `sizes` and new `top_diff_features`,
+  `feature_importance`, `medoids`, and `by_time` sections replacing the opaque
+  `metadata`).
+* `pca_components: list[PCAComponentModel]` is replaced by a `PCAExplain`
+  payload, keeping component-level variance ratios while surfacing the new
+  narrative strings and sorted loading table.
+* `change_points: list[ChangePointModel]` is upgraded so each entry is a
+  `ChangePointReport` that captures segment summaries, test strength, and UI
+  context hooks.
+
+`ResidualForensicsModel` within `AutoTriageResultModel` does not yet have an
+explicit replacement, but the intention is to align it with the `links` and
+`flags` structure from `SuspicionItem` to maintain consistent UX affordances.
+
 ClusterProfile = {
   "method": "kmeans" | "hierarchical",
   "k": int,

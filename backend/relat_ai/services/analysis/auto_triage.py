@@ -98,6 +98,35 @@ class AutoTriageResult:
     suspicion_rankings: Sequence[SuspicionScore]
     quality_flags: Sequence[QualityFlag]
 
+# ---------------------------------------------------------------------------
+# Migration plan for richer payloads
+# ---------------------------------------------------------------------------
+#
+# ``SuspicionItem`` / ``ClusterProfile`` / ``PCAExplain`` / ``ChangePointReport``
+# will eventually replace the light-weight dataclasses above.  To get there
+# without breaking consumers that still depend on the legacy shapes:
+#
+# 1. Introduce parallel dataclasses mirroring the richer schema (e.g.
+#    ``SuspicionItemPayload``) and add optional fields for narratives, links, and
+#    contribution breakdowns.
+# 2. Teach ``run_auto_triage`` to compute those details incrementally while the
+#    existing attributes are still populated.  For example, the PCA routine can
+#    return both ``PCAComponentInsight`` and a structured ``PCAExplain`` object
+#    with variance tables and narrative strings derived from loadings.
+# 3. Plumb a feature flag (``emit_structured_payloads``) through
+#    ``AutoTriageConfig`` so the service can emit both schemas in parallel during
+#    the rollout window.  When the flag is disabled we simply drop the new
+#    structures before returning.
+# 4. Update helper functions like ``_score_suspicion`` to produce the new
+#    ``contrib`` and ``top_signals`` fields, but also aggregate them back into the
+#    old ``drivers`` list so nothing is lost for legacy clients.
+# 5. Ensure change-point and cluster helpers populate context hooks (segment
+#    stats, by-time summaries, medoid indices) behind the flag so downstream
+#    components can opt-in tab by tab.
+#
+# With these steps the backend can emit the richer payloads, cache them, and
+# still satisfy historical consumers until the front-end migration is complete.
+
 
 @dataclass(slots=True)
 class AutoTriageConfig:
