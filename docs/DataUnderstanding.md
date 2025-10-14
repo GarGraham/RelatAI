@@ -26,6 +26,200 @@ SuspicionItem = {
   "flags": ["collinearity","low_n"] # quality/confidence flags
 }
 
+## 1.0 Suspicion scoring and explanation wiring
+
+### 1.0.1 Normalising component signals inside `_score_suspicion`
+
+The suspicion stack currently sums raw contributions from PCA variance, change
+point counts, distribution width, and residual spikes. That makes the ranking
+opaque and difficult to explain. The next iteration adds a deterministic helper
+that produces **per-target contribution vectors** and **narrative-ready signal
+metadata** before the final aggregation.
+
+Implementation sketch:
+
+```python
+def _score_suspicion(..., *, normalise=True) -> list[SuspicionScore]:
+    signals = _compute_component_signals(...)
+    for column, vector in signals.items():
+        contribution = vector.normalised_weights  # dict[str, float] summing to 1
+        score = vector.weighted_score             # float in [0, 1]
+        top_signals = vector.build_bullets()      # list[dict[str, str]]
+        entries.append(SuspicionScore(..., score=score, drivers=..., metadata={
+            "contribution": contribution,
+            "top_signals": top_signals,
+        }))
+```
+
+`_compute_component_signals` will:
+
+1. Collect raw magnitudes for each component per column (e.g. absolute PCA
+   loading, change count, MAD/z-score, residual amplitude).
+2. Convert raw magnitudes into comparable **0..1 scaled signals** via
+   percentile ranks or bounded min/max scaling within the batch.
+3. Cache the pre-scaling raw stats so narratives can include actual counts and
+   values (e.g. "3 changes", "|loading| 0.34").
+4. Produce both the normalised weights (for contribution vectors) and the final
+   weighted score (average of non-zero signals, optionally emphasising change
+   detection via configurable multipliers).
+5. Create `top_signals` bullet dictionaries sorted by impact. Each bullet will
+   include `kind` (`"pca"`, `"change_point"`, `"dispersion"`, `"residual"`), a
+   `detail` string combining the raw statistic and contextual metadata (date
+   ranges, component id, etc.), and optional `link` hints so the UI can drive to
+   secondary charts.
+
+Edge considerations:
+
+* Columns with only one non-zero signal should still get a full contribution
+  vector (100% assigned to that signal) so the UI renders a single stacked bar
+  segment.
+* If the dataset lacks a signal type entirely (e.g. no change points), the
+  helper records zero contribution and omits the corresponding bullet to avoid
+  noisy messaging.
+* The helper will live inside `auto_triage.py` initially; if it grows beyond
+  ~80 LOC we can extract to `analysis/suspicion_signals.py` without API changes.
+
+### 1.0.2 Building `top_signals`
+
+`top_signals` is the concise explanation list surfaced in both the API payload
+and UI. The helper above outputs a canonical structure:
+
+```python
+{
+    "kind": "pca",
+    "weight": 0.42,            # post-normalisation share
+    "detail": "PC1 loading 0.34 (97th pct)",
+    "link": {"component": "PC1"}
+}
+```
+
+Sorting rules:
+
+1. Primary sort by `weight` descending.
+2. Tie-break by deterministic tuple (`kind`, `detail`) to keep caching
+   signatures stable.
+
+At most 4 bullets ship per target. Long narratives can go into a dedicated
+`metadata['extended_signals']` list if we need more than four later.
+
+### 1.0.3 Contribution vectors in `SuspicionScore`
+
+The `SuspicionScore` dataclass stays minimal to keep internal maths simple.
+Instead, each entry's `metadata` (serialised downstream) will carry:
+
+```python
+{
+    "contributions": {
+        "pca": 0.42,
+        "change_points": 0.33,
+        "dispersion": 0.15,
+        "residual": 0.10,
+    },
+    "top_signals": [...],
+    "raw_stats": {
+        "pca": {"component": "PC1", "loading": 0.34},
+        "change_points": {"count": 3, "dates": [...]},
+        "dispersion": {"mad_over_sigma": 1.8},
+        "residual": {"max_bucket_residual": 2.7},
+    },
+}
+```
+
+The backend serializer and UI below rely on the above shape.
+
+### 1.0.4 Serializer wiring (`backend/relat_ai/services/results.py`)
+
+`AutoTriageConverters` needs two additions:
+
+1. Accept an optional `metadata` payload on `SuspicionScore` and copy it to the
+   Pydantic layer. This can ride on the existing `RankedInsightModel.metadata`
+   field (dict[str, Any]) to avoid a breaking schema change.
+2. Introduce a thin `ContributionVectorModel` if we want type validation, or
+   simply populate `metadata['contributions']`, `metadata['top_signals']`, and
+   `metadata['raw_stats']` directly.
+
+Serializer steps:
+
+```python
+class AutoTriageConverters:
+    ...
+    @staticmethod
+    def suspicion_scores(scores: Sequence[SuspicionScore]) -> list[RankedInsightModel]:
+        return [
+            RankedInsightModel(
+                label=score.target,
+                score=score.score,
+                drivers=list(score.drivers),
+                category="variable",  # existing logic
+                metadata={
+                    **(score.metadata or {}),
+                    "contributions": score.metadata.get("contributions", {}),
+                    "top_signals": score.metadata.get("top_signals", []),
+                },
+            )
+            for score in scores
+        ]
+```
+
+The converter should guard against `None` metadata and ensure the contributions
+sum to ~1.0 (round to two decimals for transmission).
+
+### 1.0.5 Frontend display (`frontend/streamlit_app/components/autotriage_view.py`)
+
+Within `render_suspicion_rankings`:
+
+1. Swap the current plain dataframe for a layout combining a stacked bar chart
+   (Plotly) and textual evidence. Each selected item should show:
+   * Horizontal stacked bar with segments for `pca`, `change_points`,
+     `dispersion`, and `residual`, coloured consistently with other charts.
+   * Bullet list derived from `metadata['top_signals']`.
+   * Navigation links (Streamlit buttons) that jump users to the PCA, change
+     point, or residual tabs using `st.session_state['active_autotriage_tab']`.
+2. Provide a compact table view for quick scanning (rank, target, score), but
+   emphasise the detailed panel with the bar/bullets when an item is selected.
+3. Gracefully fall back when metadata is missing (render grey "No signal" bar
+   and omit bullets).
+
+Pseudo-flow for the detail panel:
+
+```python
+metadata = row.get("metadata", {})
+vector = metadata.get("contributions", {})
+segments = [
+    {"name": "PCA", "value": vector.get("pca", 0.0), "color": "#636EFA", "tab": "PCA"},
+    {"name": "Change Points", "value": vector.get("change_points", 0.0), "color": "#EF553B", "tab": "Change Points"},
+    ...
+]
+render_stacked_bar(segments)
+for bullet in metadata.get("top_signals", []):
+    st.markdown(f"- {bullet['detail']}")
+    if bullet.get("link"):
+        st.link_button(...)
+```
+
+Navigation controls can simply set a query parameter or write into
+`st.session_state` and rely on the outer `render_autotriage_results` to inspect
+that state when building tabs.
+
+### 1.0.6 Tests
+
+Backend unit tests:
+
+* Extend `tests/backend/services/analysis/test_auto_triage.py` (or introduce new
+  coverage) to assert that `_score_suspicion` normalises contributions to 1.0 for
+  multi-signal inputs, handles zero-signal columns, and emits correctly sorted
+  `top_signals`.
+* Add serializer tests verifying `AutoTriageConverters` propagate metadata into
+  the `RankedInsightModel` payload.
+
+Frontend tests:
+
+* Update Streamlit component tests (currently in `tests/frontend/test_autotriage_view.py`)
+  to validate that the stacked bar receives the expected segment percentages and
+  bullet texts when metadata is present.
+* Snapshots should include the fallback rendering path (no metadata) and at
+  least one case with navigation buttons enabled.
+
 ClusterProfile = {
   "method": "kmeans" | "hierarchical",
   "k": int,
