@@ -1,0 +1,302 @@
+/* Custom CSS for RelatAI Streamlit Application */
+
+/* ========================================================================
+   Color Scheme: Professional Blue (Option A from design doc)
+   ======================================================================== */
+
+:root {
+    /* Primary Colors */
+    --primary-color: #1E3A8A;      /* Dark Blue */
+    --secondary-color: #3B82F6;    /* Blue */
+    --accent-color: #10B981;       /* Green */
+    --warning-color: #F59E0B;      /* Amber */
+    --error-color: #EF4444;        /* Red */
+    
+    /* Background Colors */
+    --background-color: #F9FAFB;   /* Light Gray */
+    --surface-color: #FFFFFF;      /* White */
+    --text-color: #111827;         /* Near Black */
+    --text-muted: #6B7280;         /* Gray */
+    
+    /* Spacing */
+    --spacing-xs: 0.25rem;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+    --spacing-xl: 2rem;
+    
+    /* Border Radius */
+    --radius-sm: 0.25rem;
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+}
+
+/* ========================================================================
+   Typography
+   ======================================================================== */
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 
+                 'Helvetica Neue', Arial, sans-serif;
+    color: var(--text-color);
+    background-color: var(--background-color);
+}
+
+h1, h2, h3, h4, h5, h6 {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* ========================================================================
+   Buttons
+   ======================================================================== */
+
+.stButton > button {
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Primary button */
+.stButton > button[kind="primary"] {
+    background-color: var(--primary-color);
+    border: none;
+}
+
+.stButton > button[kind="primary"]:hover {
+    background-color: var(--secondary-color);
+}
+
+/* ========================================================================
+   Metrics
+   ======================================================================== */
+
+div[data-testid="stMetricValue"] {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--primary-color);
+}
+
+div[data-testid="stMetricLabel"] {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* ========================================================================
+   Cards and Containers
+   ======================================================================== */
+
+.element-container {
+    border-radius: var(--radius-md);
+}
+
+/* Success messages */
+.stSuccess {
+    background-color: rgba(16, 185, 129, 0.1);
+    border-left: 4px solid var(--accent-color);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+}
+
+/* Info messages */
+.stInfo {
+    background-color: rgba(59, 130, 246, 0.1);
+    border-left: 4px solid var(--secondary-color);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+}
+
+/* Warning messages */
+.stWarning {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-left: 4px solid var(--warning-color);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+}
+
+/* Error messages */
+.stError {
+    background-color: rgba(239, 68, 68, 0.1);
+    border-left: 4px solid var(--error-color);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+}
+
+/* ========================================================================
+   Sidebar
+   ======================================================================== */
+
+section[data-testid="stSidebar"] {
+    background-color: var(--surface-color);
+    border-right: 1px solid #E5E7EB;
+}
+
+section[data-testid="stSidebar"] button {
+    margin-bottom: var(--spacing-sm);
+}
+
+/* ========================================================================
+   Data Tables
+   ======================================================================== */
+
+.dataframe {
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.dataframe thead th {
+    background-color: var(--primary-color);
+    color: white;
+    font-weight: 600;
+    text-align: left;
+    padding: var(--spacing-md);
+}
+
+.dataframe tbody tr:hover {
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+/* ========================================================================
+   File Uploader
+   ======================================================================== */
+
+div[data-testid="stFileUploader"] {
+    border: 2px dashed var(--secondary-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-xl);
+    background-color: rgba(59, 130, 246, 0.02);
+    transition: all 0.2s ease;
+}
+
+div[data-testid="stFileUploader"]:hover {
+    border-color: var(--primary-color);
+    background-color: rgba(59, 130, 246, 0.05);
+}
+
+/* ========================================================================
+   Expanders
+   ======================================================================== */
+
+div[data-testid="stExpander"] {
+    border: 1px solid #E5E7EB;
+    border-radius: var(--radius-md);
+    margin-bottom: var(--spacing-md);
+}
+
+div[data-testid="stExpander"] summary {
+    font-weight: 500;
+    color: var(--primary-color);
+}
+
+/* ========================================================================
+   Progress Bars
+   ======================================================================== */
+
+.stProgress > div > div {
+    background-color: var(--accent-color);
+}
+
+/* ========================================================================
+   Tabs
+   ======================================================================== */
+
+button[data-baseweb="tab"] {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    font-weight: 500;
+}
+
+button[data-baseweb="tab"][aria-selected="true"] {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+/* ========================================================================
+   Input Fields
+   ======================================================================== */
+
+input, textarea, select {
+    border-radius: var(--radius-sm);
+    border: 1px solid #D1D5DB;
+}
+
+input:focus, textarea:focus, select:focus {
+    border-color: var(--secondary-color);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ========================================================================
+   Badges (for confidence flags)
+   ======================================================================== */
+
+.badge {
+    display: inline-block;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge-success {
+    background-color: rgba(16, 185, 129, 0.2);
+    color: #065F46;
+}
+
+.badge-warning {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: #92400E;
+}
+
+.badge-error {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: #991B1B;
+}
+
+.badge-info {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #1E40AF;
+}
+
+/* ========================================================================
+   Responsive Design
+   ======================================================================== */
+
+@media (max-width: 768px) {
+    :root {
+        --spacing-md: 0.75rem;
+        --spacing-lg: 1rem;
+        --spacing-xl: 1.5rem;
+    }
+    
+    div[data-testid="stMetricValue"] {
+        font-size: 1.5rem;
+    }
+}
+
+/* ========================================================================
+   Utility Classes
+   ======================================================================== */
+
+.text-center {
+    text-align: center;
+}
+
+.text-muted {
+    color: var(--text-muted);
+}
+
+.mt-1 { margin-top: var(--spacing-md); }
+.mb-1 { margin-bottom: var(--spacing-md); }
+.ml-1 { margin-left: var(--spacing-md); }
+.mr-1 { margin-right: var(--spacing-md); }
+
+.p-1 { padding: var(--spacing-md); }

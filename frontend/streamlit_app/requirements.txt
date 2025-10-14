@@ -1,0 +1,21 @@
+# Frontend dependencies for RelatAI Streamlit application
+# Note: Using version ranges for Python 3.13+ compatibility with pre-built wheels
+
+# Core framework
+streamlit>=1.30.0
+
+# Data manipulation and analysis
+pandas>=2.2.0
+numpy>=1.26.0
+
+# API communication
+requests>=2.31.0
+
+# Visualization
+plotly>=5.18.0
+
+# Image handling
+Pillow>=10.1.0
+
+# Configuration
+python-dotenv>=1.0.0

@@ -16,6 +16,8 @@
 - `docs/MILESTONE4_COMPLETION_REPORT.md`: Final completion report documenting all deliverables, testing, documentation, bug fixes, and success criteria met for Milestone 4.
 - `docs/MILESTONE5_REVIEW.md`: Comprehensive review of Milestone 5 (Auto-Triage Mode) identifying 3 bugs (1 critical index alignment issue), refactoring opportunities, missing components (API routes, integration tests), and holistic repository status assessment.
 - `docs/MILESTONE5_SUMMARY.md`: Executive summary for Milestone 5 review with quick status, critical findings, immediate action items, and strategic recommendations.
+- `docs/MILESTONE8_REVIEW.md`: Comprehensive review of Milestone 8 (Result Serialization & Storage) identifying 4 bugs (1 high-priority signature mismatch, missing validation), 4 refactoring opportunities, test coverage gaps, and repository completion assessment at 65%.
+- `docs/MILESTONE9_DETAILED.md`: Detailed 10-day implementation plan for Milestone 9 (Frontend Experience - Streamlit Prototype) organized into 5 phases covering foundation and upload (Phase 1), configuration interface (Phase 2), analysis execution and results (Phase 3), templates and export (Phase 4), polish and documentation (Phase 5), with component specifications, visual mockups, API integration strategy, risk assessment, and success criteria.
 - `docs/AuditTrail_UserGuide.md`: User-facing documentation for audit trail interpretation, API usage, action types reference, use cases, and troubleshooting.
 - `docs/Preprocessing_DeveloperGuide.md`: Developer guide for extending preprocessing system, architecture overview, adding new strategies/transformations, testing patterns, and best practices.
 - `docs/FutureEnhancements.md`: Backlog of stretch goals and nice-to-have features including advanced imputation, audit persistence, user tracking, feature engineering, and ML integrations.
@@ -81,8 +83,17 @@
 - `backend/scripts/benchmark.py`: CLI utility to benchmark correlation throughput on datasets.
 
 ## Frontend (`frontend/`)
-- `frontend/streamlit_app/app.py`: Streamlit prototype entrypoint accepting uploads and previewing workflow messaging.
-- `frontend/streamlit_app/components/__init__.py`: Placeholder package for reusable Streamlit components.
+- `frontend/streamlit_app/README.md`: Frontend-specific setup steps, configuration guide, usage instructions, and troubleshooting for the Streamlit application.
+- `frontend/streamlit_app/app.py`: Main Streamlit application entry point providing dashboard with backend status monitoring, dataset navigation, quick actions, and help resources.
+- `frontend/streamlit_app/config.py`: Centralized configuration management with AppConfig dataclass supporting environment variables for backend URL, upload limits, UI preferences, and feature flags.
+- `frontend/streamlit_app/requirements.txt`: Production dependencies for Streamlit application including web framework, data processing, API communication, visualization, and configuration management libraries.
+- `frontend/streamlit_app/requirements-dev.txt`: Development dependencies for testing, formatting, linting, and type checking.
+- `frontend/streamlit_app/pages/1_📊_Dataset_Upload.py`: Dataset upload page with file validation, backend upload integration, profile display with column statistics, quality warnings, and navigation to configuration workflow.
+- `frontend/streamlit_app/components/__init__.py`: Placeholder package for reusable Streamlit components (column selectors, filter panels, result visualizations).
+- `frontend/streamlit_app/utils/__init__.py`: Utility package exports for API client, session state management, and error handling helpers.
+- `frontend/streamlit_app/utils/api_client.py`: Backend API communication layer with RelatAIClient class supporting dataset operations, configuration management, template persistence, audit log retrieval, and comprehensive error handling with user-friendly messages.
+- `frontend/streamlit_app/utils/session_state.py`: Session state management utilities providing initialization helpers, safe state access, context loading, dataset status checks, analysis state resets, and debug display for development.
+- `frontend/streamlit_app/assets/styles.css`: Custom CSS styling with Professional Blue color scheme defining typography, button styles, metrics display, alert cards, sidebar aesthetics, table enhancements, badge classes for confidence flags, and responsive design breakpoints.
 - `frontend/webapp/README.md`: Placeholder documentation for the future React/Dash implementation.
 
 ## Data Assets (`datasets/`)
