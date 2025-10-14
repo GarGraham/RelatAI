@@ -27,6 +27,7 @@ class RegressionMetrics:
     adjusted_r_squared: float
     aic: float
     bic: float
+    cohen_f2: float | None = None
 
 
 @dataclass(slots=True)
@@ -37,6 +38,7 @@ class ANOVAMetrics:
     p_value: float
     df_factor: float
     df_residual: float
+    effect_size: float | None = None
 
 
 @dataclass(slots=True)
@@ -82,6 +84,14 @@ class ModelSummary:
     metrics: ModelMetrics
     sample_size: int | None = None
     notes: Sequence[str] | None = None
+    diagnostics: "RegressionDiagnostics | None" = None
+
+
+@dataclass(slots=True)
+class RegressionDiagnostics:
+    """Supplementary diagnostic statistics for regression-style models."""
+
+    variance_inflation_factors: dict[str, float]
 
 
 @dataclass(slots=True)
