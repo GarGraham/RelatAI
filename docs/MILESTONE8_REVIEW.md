@@ -110,6 +110,8 @@ def export_reduced_dataset(frame, arg2, *, top_n, include_columns=()):
     # ... proceed with insights
 ```
 
+**Resolution Update:** ✅ `export_reduced_dataset` now accepts either a `SerializedAnalysisResult` or a ranked insight sequence, normalises inputs, and raises a descriptive error when no exportable columns are available. Unit coverage added for both invocation styles.
+
 ---
 
 ### 🟡 BUG-M8-002: Missing Pydantic Validation Constraints
@@ -186,6 +188,8 @@ class RankedInsightModel(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 ```
 
+**Resolution Update:** ✅ Added the described validation bounds to correlation, regression, and ranking models while clamping multivariate scores to effect-size driven values so persisted insights remain within [0, 1].
+
 ---
 
 ### 🟡 BUG-M8-003: Field Name Inconsistency in SerializedAnalysisResult
@@ -223,6 +227,8 @@ class SerializedAnalysisResult(BaseModel):
     quality_flags: list[QualityFlagModel] = Field(default_factory=list)
     cached_at: datetime = Field(default_factory=_utcnow)
 ```
+
+**Resolution Update:** ✅ Renamed the field to `auto_triage_result` and aligned serializer logic/tests with the new attribute.
 
 **Impact:**
 - Minor: Improves code readability and consistency
@@ -290,6 +296,8 @@ def export_reduced_dataset(
 
     return frame.loc[:, columns].copy()
 ```
+
+**Resolution Update:** ✅ Added the descriptive guard and harmonised it with the new dual-signature export helper.
 
 ---
 
@@ -366,6 +374,8 @@ params_sig = SignatureBuilder.for_parameters(params)
 - Easier unit testing: mock/patch single class
 - Clear naming: `for_configuration` vs. `build_configuration_signature`
 - Extensibility: add new signature types without polluting module namespace
+
+**Resolution Update:** ✅ Introduced `SignatureBuilder` with `for_configuration/filters/parameters` helpers and updated call sites/tests to use the consolidated API.
 
 ---
 
@@ -450,6 +460,8 @@ def convert(source: Any, target_type: type[U]) -> U:
 - Type safety through Protocol
 - Easier testing: each converter is isolated
 - Extensibility: register new converters without modifying core code
+
+**Resolution Update:** ✅ Introduced converter helper classes for quality flags, multivariate metrics, diagnostics, and auto-triage payloads; serialization routines now delegate to them for cleaner code paths.
 
 ---
 
@@ -616,6 +628,8 @@ class _CacheEntry:
 - Dataset-level invalidation for bulk updates
 - Better observability with `size()` and `keys()`
 
+**Resolution Update:** ✅ ResultStorage now tracks TTL-aware cache entries, exposes eviction policies, and adds invalidate/size/keys helpers with corresponding unit tests.
+
 ---
 
 ### 📦 REFACTOR-M8-004: Type-Safe Serialization Dispatcher
@@ -737,6 +751,8 @@ def create_serialized_result(
 - Easy to add new analysis modes
 - Clear separation: each serializer is self-contained
 - Testable: mock serializers for unit tests
+
+**Resolution Update:** ✅ Added serializer classes with a registry-backed dispatcher and refactored `create_serialized_result` to route through them while generating signatures via `SignatureBuilder`.
 
 ---
 
