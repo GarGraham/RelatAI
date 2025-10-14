@@ -99,3 +99,23 @@ def test_configuration_update_rejects_unknown_column(client: TestClient) -> None
         json={"selected_columns": ["missing"]},
     )
     assert response.status_code == 422
+
+
+def test_configuration_template_delete_endpoint(client: TestClient) -> None:
+    dataset_id = _upload_dataset(client)
+
+    create_response = client.post(
+        f"/datasets/{dataset_id}/templates",
+        json={"name": "temp", "description": "temporary"},
+    )
+    assert create_response.status_code == 201
+    template_id = create_response.json()["template_id"]
+
+    delete_response = client.delete(
+        f"/datasets/{dataset_id}/templates/{template_id}"
+    )
+    assert delete_response.status_code == 204
+
+    templates_list = client.get(f"/datasets/{dataset_id}/templates")
+    assert templates_list.status_code == 200
+    assert templates_list.json() == []

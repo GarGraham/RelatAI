@@ -116,3 +116,41 @@ def test_template_store_returns_isolated_copies() -> None:
     stored = templates.get_template("ds", template.template_id)
     assert stored is not None
     assert stored.configuration.selected_columns == ["x", "y"]
+
+
+def test_configuration_history_records_changes() -> None:
+    profile = _make_profile("ds", ["alpha", "beta"])
+    configuration.initialise_configuration("ds", profile)
+
+    initial_history = configuration.list_configuration_versions("ds")
+    assert len(initial_history) == 1
+    assert initial_history[0].version == 1
+    assert initial_history[0].configuration.selected_columns == ["alpha", "beta"]
+
+    configuration.update_configuration(
+        "ds", ConfigurationUpdateRequest(filters={"alpha": ["A"]}), profile
+    )
+
+    history = configuration.list_configuration_versions("ds")
+    assert len(history) == 2
+    latest = history[-1]
+    assert latest.version == 2
+    assert latest.configuration.filters == {"alpha": ["A"]}
+    assert latest.changes["filters"] == ({}, {"alpha": ["A"]})
+
+
+def test_restore_configuration_version_reverts_state() -> None:
+    profile = _make_profile("ds", ["x", "y"])
+    configuration.initialise_configuration("ds", profile)
+    configuration.update_configuration(
+        "ds", ConfigurationUpdateRequest(selected_columns=["x"]), profile
+    )
+
+    configuration.restore_configuration_version("ds", version=1)
+    restored = configuration.get_configuration("ds")
+    assert restored is not None
+    assert restored.selected_columns == ["x", "y"]
+
+    history = configuration.list_configuration_versions("ds")
+    assert len(history) == 3
+    assert history[-1].changes["selected_columns"] == (["x"], ["x", "y"])

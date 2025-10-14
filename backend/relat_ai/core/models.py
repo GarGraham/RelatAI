@@ -116,7 +116,13 @@ class DatasetConfiguration(BaseModel):
 
 
 class ConfigurationUpdateRequest(BaseModel):
-    """Partial update payload for dataset configuration settings."""
+    """Partial update payload for dataset configuration settings.
+
+    Filter semantics:
+    - ``filters`` set to ``null`` leaves filters unchanged.
+    - ``filters`` set to ``{}`` clears all existing filters.
+    - ``filters`` populated with column keys replaces those specific filters.
+    """
 
     selected_columns: list[str] | None = None
     analysis_mode: AnalysisMode | None = None
