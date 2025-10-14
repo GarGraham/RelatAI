@@ -34,6 +34,7 @@
 - `backend/relat_ai/api/main.py`: Creates the FastAPI app, registers routes, and exposes configuration metadata endpoint.
 - `backend/relat_ai/api/routes/__init__.py`: Registers public API route modules.
 - `backend/relat_ai/api/routes/datasets.py`: Dataset upload and retrieval endpoints returning profiling metadata.
+- `backend/relat_ai/api/routes/configuration.py`: Configuration management endpoints for column selection, filtering, previews, and template operations.
 - `backend/relat_ai/api/routes/health.py`: Health check endpoint used for uptime monitoring.
 - `backend/relat_ai/api/routes/audit.py`: REST endpoints exposing preprocessing audit logs for datasets.
 - `backend/relat_ai/core/__init__.py`: Re-exports configuration primitives.
@@ -50,6 +51,8 @@
 - `backend/relat_ai/services/analysis/auto_triage.py`: Auto-triage analysis pipeline combining PCA loadings, change-point detection (CUSUM, PELT algorithms), clustering (K-Means, Hierarchical), residual forensics, and suspicion ranking for unsupervised anomaly triage during quality events.
 - `backend/relat_ai/services/analysis/change_detection.py`: Shared change-point detection algorithms (CUSUM and PELT) exposed for reuse across analysis pipelines with configurable thresholds.
 - `backend/relat_ai/services/analysis/confidence_flags.py`: Centralised quality flag dataclass and builder utilities producing consistent dataset warnings across analysis modes.
+- `backend/relat_ai/services/configuration.py`: In-memory configuration store with validation, filter application helpers, and defaults derived from dataset profiles.
+- `backend/relat_ai/services/templates.py`: Thread-safe storage for reusable configuration templates referencing dataset configurations.
 - `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
 - `backend/relat_ai/services/summarization.py`: Placeholder LLM summarization service for analysis results.
 - `backend/relat_ai/services/visualization.py`: Heatmap metadata factory for frontend visualizations.
@@ -67,9 +70,11 @@
 - `backend/relat_ai/tests/unit/test_analysis_pairwise.py`: Validates pairwise analysis planning across numeric, categorical, and mixed methods.
 - `backend/relat_ai/tests/unit/test_analysis_multivariate.py`: Verifies regression plan expansion, interaction controls, regression/ANOVA/PLS outputs, effect sizes, and diagnostic calculations.
 - `backend/relat_ai/tests/unit/test_analysis_auto_triage.py`: Unit tests for auto-triage pipeline validating PCA components, change-point detection (CUSUM, PELT), clustering, residual forensics, and suspicion rankings.
+- `backend/relat_ai/tests/unit/test_configuration.py`: Unit tests for configuration and template services covering defaults, validation, and filter application.
 - `backend/relat_ai/tests/unit/test_analysis_change_detection.py`: Unit tests verifying the extracted CUSUM and PELT change-point detection helpers handle shifts and edge cases.
 - `backend/relat_ai/tests/integration/test_datasets_api.py`: Integration coverage for dataset upload and retrieval endpoints.
 - `backend/relat_ai/tests/integration/test_audit_api.py`: Validates audit trail API responses after dataset ingestion.
+- `backend/relat_ai/tests/integration/test_configuration_api.py`: Integration tests verifying configuration endpoints, previews, template persistence, and validation errors.
 - `backend/relat_ai/tests/integration/__init__.py`: Integration test namespace marker.
 - `backend/scripts/benchmark.py`: CLI utility to benchmark correlation throughput on datasets.
 

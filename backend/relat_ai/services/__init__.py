@@ -1,5 +1,21 @@
-"""Service layer for ingestion, schema detection, analysis, and summarization."""
+"""Service layer for ingestion, configuration, templates, and analysis."""
 
-from . import analysis, ingestion, schema_detection, summarization, visualization
+from . import (
+    analysis,
+    configuration,
+    ingestion,
+    schema_detection,
+    summarization,
+    templates,
+    visualization,
+)
 
-__all__ = ["analysis", "ingestion", "schema_detection", "summarization", "visualization"]
+__all__ = [
+    "analysis",
+    "configuration",
+    "ingestion",
+    "schema_detection",
+    "summarization",
+    "templates",
+    "visualization",
+]

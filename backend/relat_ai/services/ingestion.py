@@ -18,6 +18,7 @@ from relat_ai.core.config import get_settings
 from relat_ai.core.exceptions import DatasetRegistryPersistenceError
 from relat_ai.core.models import DatasetMetadata, DatasetUploadResponse
 from relat_ai.services import schema_detection
+from relat_ai.services.configuration import initialise_configuration
 from relat_ai.services.audit_trail import (
     initialise_audit_log,
     record_preprocessing_action,
@@ -286,6 +287,8 @@ def save_upload(
         sample_size=settings.profile_sample_size,
         dataset_name=dataset_metadata.original_filename or dataset_metadata.name,
     )
+
+    initialise_configuration(dataset_metadata.dataset_id, profile)
 
     record = DatasetRecord(metadata=dataset_metadata, profile=profile)
     register_dataset(record)
