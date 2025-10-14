@@ -366,7 +366,7 @@ When performance targets cannot be met:
 - [x] Preprocessing pipeline (imputation, outlier clipping, robust scaling)
 - [x] Audit trail REST API endpoints
 - [x] Result caching with intelligent key generation
-- [ ] Partial Least Squares (PLS) implementation
+- [x] Partial Least Squares (PLS) implementation
 - [ ] Auto-Triage mode analysis engine (PCA, change-point detection, clustering, residual forensics)
 - [ ] Confidence flag assignment across all analysis modes
 - [ ] Template save/load functionality for repeatable workflows
