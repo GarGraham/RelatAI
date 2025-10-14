@@ -2,7 +2,7 @@
 
 from fastapi import Depends, FastAPI
 
-from relat_ai.api.routes import audit, datasets, health
+from relat_ai.api.routes import audit, configuration, datasets, health
 from relat_ai.core.config import Settings, get_settings, set_settings
 
 
@@ -22,6 +22,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(datasets.router)
+    app.include_router(configuration.router)
     app.include_router(audit.router)
 
     @app.get("/config", tags=["system"], summary="Retrieve runtime configuration metadata")
