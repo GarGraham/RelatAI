@@ -147,6 +147,51 @@ def get_current_dataset_id() -> Optional[str]:
     return st.session_state.get("current_dataset_id")
 
 
+def has_configuration() -> bool:
+    """
+    Check if there is an active configuration loaded.
+    
+    Returns:
+        True if a configuration exists, False otherwise
+    """
+    config = st.session_state.get("configuration")
+    return config is not None and isinstance(config, dict)
+
+
+def get_configuration() -> Optional[dict]:
+    """
+    Get the current configuration dictionary.
+    
+    Returns:
+        Configuration dictionary if exists, None otherwise
+    """
+    return st.session_state.get("configuration")
+
+
+def update_configuration(updates: dict) -> None:
+    """
+    Update specific fields in the current configuration.
+    
+    Args:
+        updates: Dictionary of configuration fields to update
+    """
+    config = get_configuration()
+    if config is None:
+        config = {}
+    
+    config.update(updates)
+    set_state("configuration", config)
+
+
+def reset_configuration() -> None:
+    """
+    Clear the current configuration state.
+    """
+    set_state("configuration", None)
+    set_state("preview_data", None)
+    set_state("selected_template", None)
+
+
 def debug_state() -> None:
     """
     Display current session state for debugging purposes.
