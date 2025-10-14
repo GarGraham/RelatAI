@@ -64,6 +64,36 @@ ChangePointReport = {
   "context": [ {"index":231,"time":"2025-03-18","cluster_shift_to":2,"batch":"B-104"} ]
 }
 
+## Change-point detection implementation decision
+
+- **Adopt `ruptures` for the production implementation.** The current
+  `backend/relat_ai/services/analysis/change_detection.py` shim will be replaced
+  with a thin wrapper around `ruptures.detection.Pelt` so we can rely on the
+  battle-tested penalty + minimum-segment logic already provided by the
+  library, instead of continually patching our simplified PELT translation.
+- **Dependency + configuration updates.** Add `ruptures>=1.1.9` to
+  `backend/requirements.txt`. Default configuration inside the wrapper should
+  expose the same call signature (series in, indices out) while pinning
+  `model="rbf"`, `min_size=5`, and a default penalty equal to
+  `penalty_multiplier * np.log(len(series))` (retaining today’s multiplier
+  semantics).
+- **Unit-test updates.** Extend
+  `backend/relat_ai/tests/unit/test_analysis_change_detection.py` to (a)
+  validate that we pass the penalty/min-size defaults through to the
+  `ruptures.detection.Pelt` instance, (b) continue exercising the CUSUM helper
+  for backwards compatibility, and (c) assert that a synthetic step series
+  returns monotonically increasing change indices when `ruptures` is wired up.
+- **Fallback + compatibility expectations.** Keep the existing numpy-only
+  routines available behind the same module-level symbols until downstream
+  consumers migrate. Auto-triage scoring and the frontend change-point tab
+  expect the `ChangePointReport` schema above and a synchronous API; maintain
+  those interfaces by (1) guarding the `ruptures` import so notebooks/tests can
+  fall back to the legacy implementation if the dependency is unavailable, and
+  (2) mirroring the legacy output format (list of indices + `method="pelt"`).
+  During the rollout the UI should continue to receive identical payloads, with
+  only the internal scoring heuristics benefiting from the more stable
+  segmentation.
+
 1) Backend: add interpretation functions
 1.1 Cluster profiling (the missing piece)
 def compute_cluster_profile(
