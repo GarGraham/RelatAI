@@ -1245,7 +1245,77 @@ def _feature_theme(feature_names: list[str]) -> str:
 
 ### 1.3 Change-Point Context & Segmentation
 
-**(Implementation continues in next section of document...)**
+#### 1.3.1 Context-Enriched Detectors
+
+- Extend `ChangePointReportModel` population within
+  `backend/relat_ai/services/analysis/auto_triage.py` to attach contextual
+  metadata for every detected breakpoint.
+- Reuse the existing ruptures-based pipeline (PELT + windowed CUSUM) while
+  introducing a **context assembler** that consumes:
+  - Cluster membership deltas (requires calling `compute_cluster_profile`
+    when `config.enable_cluster_context` is true).
+  - Batch/production run identifiers from `frame[config.batch_column]` when
+    available.
+  - Temporal anchors derived from `config.datetime_column` (fall back to row
+    index when absent).
+- Enforce deterministic ordering by sorting change points by index prior to
+  context enrichment to keep UI references stable.
+
+#### 1.3.2 Segment Summaries & Guardrails
+
+- Generate `SegmentSummary` entries for **every interval** between change
+  points, including the leading and trailing tails. For each summary capture:
+  mean, standard deviation, count, and percentage of total rows.
+- Validate segment sizes against `config.min_segment_size`; emit the
+  `"insufficient_data"` flag whenever a segment violates the threshold.
+- Add benchmarking hooks (`time.perf_counter`) to measure detector latency on
+  5k, 10k, and 50k row samples; log to audit trail for regression tracking.
+- Unit tests:
+  - Deterministic segmentation on synthetic sinusoid with injected shifts.
+  - Correct propagation of batch metadata when batches straddle change points.
+  - Coverage for absence of optional context columns (ensure graceful None).
+
+#### 1.3.3 API & Serialization Updates
+
+- Extend the auto-triage response DTO (`AutoTriageResult`) to surface a
+  `change_point_reports: list[ChangePointReportModel]` field with stable
+  ordering.
+- Update serialization adapters to map existing ORM entities to the expanded
+  Pydantic models, ensuring backwards compatibility by supplying defaults for
+  new keys.
+- Add snapshot fixtures in `tests/backend/fixtures/change_point_reports.json`
+  for regression testing.
+
+### 1.4 Evidence Builder
+
+#### 1.4.1 Narrative Composition Service
+
+- Introduce `backend/relat_ai/services/analysis/evidence_builder.py` that
+  consumes `SuspicionItemModel`, `PCAExplainModel`, and
+  `ChangePointReportModel` instances.
+- Responsibilities:
+  - Merge top signals into a ranked markdown bullet list using reusable
+    templates (`f-string` fragments stored in `/templates/analysis/`).
+  - Provide CTA metadata for frontend cards (e.g., "View PCA Component" with
+    tab routing payload).
+  - Surface uncertainty qualifiers when quality flags contain risk codes.
+- Service exposes a `build_evidence_bundle(dataset_id: str) -> EvidenceBundle`
+  method returning structured content for all tabs.
+
+#### 1.4.2 Cross-Artifact Linking
+
+- Maintain `link_registry` dict that maps entity IDs (target column, cluster
+  id, PCA component) to canonical deep-link payloads. Evidence Builder queries
+  this registry to avoid hard-coded routing strings.
+- Synchronize registry keys with frontend enums (see Section 2.5) by sharing a
+  generated `navigation_contract.json` artifact checked into `docs/contracts/`.
+
+#### 1.4.3 Validation & Telemetry
+
+- Add unit tests to verify evidence bundles contain required keys, respect top
+  N limits, and omit empty narratives.
+- Emit telemetry via `audit_trail.log_event("evidence_bundle_built", …)`
+  capturing dataset size, build duration, and number of insights surfaced.
 
 ---
 
@@ -1297,7 +1367,137 @@ def set_active_autotriage_tab(tab: TabName, context: Optional[dict] = None) -> N
 
 ---
 
-**(Document continues with sections 2.1-8, totaling ~4000 additional lines...)**
+### 2.1 Suspicion Rankings Tab
+
+- Replace the existing simple table with a **ranked card layout** highlighting
+  score, narrative bullets, and quality flags.
+- Display contribution breakdown using a horizontal stacked bar (Plotly) whose
+  colors map to signal kinds; implement tooltip tool to show precise values.
+- Integrate quick filters (chips) for `cluster`, `changepoint`, and
+  `pca_loading` dominance; filters update state via `set_active_autotriage_tab`
+  context.
+- Accessibility: Ensure cards are keyboard navigable with ARIA labels for
+  score, description, and CTA buttons.
+
+### 2.2 PCA Tab Enhancements
+
+- Introduce two-panel layout:
+  1. Variance overview (bar chart + cumulative line) using data from
+     `PCAExplainModel.variance`.
+  2. Narrative feed showing top PCs with plain-English summaries and top
+     contributors.
+- Add "Compare Components" toggle that renders a radar chart comparing selected
+  PCs; fallback to text list when only one PC selected.
+- Provide download button for loadings as CSV via Streamlit's `download_button`.
+
+### 2.3 Change-Points Tab Redesign
+
+- Visualization stack:
+  - Primary chart: Time-series (Altair) with vertical markers for each change
+    point colored by strength bucket.
+  - Secondary panel: Segment summary table displaying stats and quality flags.
+- Enable drill-down navigation by clicking markers → triggers state update to
+  highlight corresponding segment details and open Evidence Builder entries.
+- Handle non-temporal datasets by switching to index-based x-axis and surfacing
+  helper text describing limitation.
+
+### 2.4 Clusters Tab Deep Dive
+
+- Render cluster size distribution (stacked bar) and medoid sample table with
+  pagination.
+- Provide "Feature Differences" accordion that shows ANOVA results, effect
+  sizes, and tree-based importance in descending order.
+- Integrate cluster timeline view when `by_time` present; reuse color palette
+  from suspicion tab for consistency.
+- Add "Export cluster assignments" button leveraging backend CSV endpoint.
+
+### 2.5 Navigation & Deep Linking
+
+- Centralize tab routing in `frontend/streamlit_app/navigation.py` exposing
+  `navigate(payload: dict)` that interprets `link_registry` entries.
+- Support URL query parameters (`?tab=clusters&target=Voltage_A`) using
+  Streamlit's experimental `st.experimental_get_query_params` API; ensure state
+  sync occurs on initial page load.
+- Persist last visited tab in browser local storage via
+  `components.v1.html("window.localStorage…")` fallback when cookies disabled.
+
+### 2.6 Responsive Design
+
+- Adopt CSS grid layout with breakpoints at 768px and 1200px using Streamlit's
+  theming hooks and custom components.
+- Collapse side-by-side panels into stacked layout on small screens; ensure
+  charts re-render with simplified legends to avoid overflow.
+- Run manual QA on Safari, Chrome, and Edge latest to verify scroll/touch
+  interactions (document results in QA log).
+
+---
+
+## 3. Quality & Guardrails
+
+- Implement `pydantic` validation on all incoming configuration payloads before
+  triggering analysis jobs; reject invalid inputs with actionable error
+  messages.
+- Extend existing anomaly detection guardrails to include
+  `max_clusters=12` and `max_components=8`; log overrides via audit trail.
+- Add feature flag `AUTO_TRIAGE_EXPLAINABILITY` (configurable via environment)
+  gating release to internal users first.
+- Security review: ensure serialized evidence bundles exclude raw PII columns;
+  add allowlist to backend serializer.
+
+## 4. Configuration Management
+
+- Document new config keys in `docs/Reference-Guide.md` and propagate defaults
+  through `backend/relat_ai/config/settings.py`.
+- Provide migration script that adds toggles to existing `.env` files with
+  default "off" values.
+- Introduce YAML-driven visualization presets (stored in
+  `infrastructure/config/visualization.yml`) enabling data science team to
+  adjust chart thresholds without redeploying.
+
+## 5. Testing Strategy
+
+- **Backend**: pytest suites covering Pydantic models, signal normalization,
+  evidence builder logic, and change-point segmentation. Include property tests
+  using Hypothesis for percentile ranking edge cases.
+- **Frontend**: Cypress regression pack for tab navigation, filter behavior, and
+  responsive breakpoints; integrate Percy for visual diffs of key charts.
+- **Integration**: End-to-end smoke test orchestrated via `make autotriage-e2e`
+  that loads fixture dataset, runs auto-triage pipeline, and asserts rendered
+  UI JSON contract using Playwright.
+- **Data Validation**: Leverage Great Expectations checkpoints to guarantee no
+  NaNs/Inf propagate to serialized outputs.
+
+## 6. Performance Profiling
+
+- Backend micro-benchmarks executed via `pytest --benchmark-only` for
+  normalization, clustering, and change-point routines; store baseline metrics
+  in `docs/performance/auto_triage_benchmarks.md`.
+- Frontend perceived performance tracked using Web Vitals instrumentation (CLS,
+  LCP) captured through Streamlit's `st.experimental_user_info` hook and logged
+  to analytics warehouse.
+- Implement async job batching for heavy computations by queuing tasks through
+  existing Celery infrastructure (max concurrency 4) and streaming progress to
+  UI using WebSocket channel.
+
+## 7. Migration & Backward Compatibility
+
+- Maintain legacy response structure behind `?v=1` query flag for two release
+  cycles; new clients default to explainability-enhanced schema.
+- Supply transformation utilities to convert legacy cached payloads into new
+  models, ensuring old cache entries remain consumable during rollout.
+- Update user documentation (`AuditTrail_UserGuide.md`, `ImplementationPlan.md`)
+  with callouts explaining new navigation patterns and data contracts.
+
+## 8. Acceptance Tests
+
+- Define UAT checklist covering:
+  1. Suspicion explanation readability scoring (stakeholder review).
+  2. Ability to trace evidence from suspicion card → PCA → change-point views
+     without losing context.
+  3. Confirmation that cluster profiling exports load in downstream reporting
+     notebooks.
+  4. Validation that feature flags disable the experience cleanly.
+- Capture sign-off in Confluence with screenshots + dataset IDs.
 
 ---
 
@@ -1305,14 +1505,14 @@ def set_active_autotriage_tab(tab: TabName, context: Optional[dict] = None) -> N
 
 This updated plan adds:
 
-1. **Type Safety**: Pydantic models with validation
-2. **Integration Specs**: QualityFlag, caching, audit trail
-3. **Performance Safeguards**: Sampling, early exits, benchmarks
-4. **Error Handling**: Fallback mechanisms, edge cases
-5. **Statistical Validation**: Tests comparing to reference implementations
-6. **State Management**: Centralized navigation architecture
-7. **Risk Mitigation**: Phased rollout, backward compatibility
-8. **Documentation**: Inline comments, docstrings, migration guides
+1. **Type Safety & Data Contracts**: Expanded Pydantic models with guardrails.
+2. **Backend Integration & Evidence**: QualityFlag alignment plus narrative builder.
+3. **Frontend Experience Redesign**: Suspicion, PCA, change-point, and cluster tabs with deep linking.
+4. **Quality Guardrails**: Feature flags, security reviews, and validation layers.
+5. **Configuration Management**: Documented toggles and visualization presets.
+6. **Testing Coverage**: Backend, frontend, integration, and data validation strategies.
+7. **Performance Monitoring**: Benchmark suites and Web Vitals instrumentation.
+8. **Migration & Acceptance**: Rollout plan with UAT checklist and documentation updates.
 
 **Next Steps**:
 1. Review and approve this expanded plan
