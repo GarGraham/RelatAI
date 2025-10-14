@@ -1,30 +1,114 @@
-Implementation Plan: “Make It Understandable”
-0) Data Contracts (add to your results JSON)
+ARCHIVED - NO LONGER RELEVANT
+
+# Implementation Plan: "Make It Understandable" (v1.0 - SUPERSEDED)
+
+⚠️ **NOTICE**: This document has been superseded by **DataUnderstanding_v2.md**
+
+**Version 2.0 addresses critical gaps identified in review:**
+
+1. **Type Safety & Validation**
+   - Pydantic models with field validation
+   - JSON schema generation
+   - Contribution vector normalization checks
+
+2. **Integration Specifications**
+   - QualityFlag system integration details
+   - Caching strategy with result signatures
+   - Audit trail logging requirements
+
+3. **Performance Safeguards**
+   - Sampling strategies for large datasets (50k rows)
+   - Early exits for expensive operations
+   - Benchmarking requirements before implementation
+
+4. **Error Handling & Edge Cases**
+   - Ruptures fallback mechanisms
+   - Constant series handling
+   - All-NaN column handling
+   - Validation errors with clear messages
+
+5. **Statistical Validation**
+   - Tests comparing ANOVA to scipy reference
+   - Deterministic scoring tests
+   - Contribution normalization tests
+
+6. **State Management Architecture**
+   - Centralized navigation state
+   - Deep-linking strategy
+   - Cross-tab context passing
+
+7. **Risk Mitigation**
+   - Phased implementation timeline (4 weeks)
+   - Backward compatibility strategy
+   - Migration path from existing RankedInsightModel
+
+**See DataUnderstanding_v2.md for the complete, production-ready plan.**
+
+---
+
+## Original Plan (v1.0) - Retained for Reference
+
+### 0) Data Contracts (add to your results JSON)
 
 Store evidence and narrative alongside the numbers so the UI can explain why.
 
-# types.py (TypedDict or pydantic models)
-SuspicionItem = {
-  "target": str,
-  "score": float,                 # 0..1
-  "contrib": {                    # score breakdown
-    "pca_loading": float,         # 0..1
-    "changepoint_strength": float,
-    "cluster_separation": float,
-    "model_importance": float
-  },
-  "top_signals": [                # short bullets for UI
-    {"kind":"pca_loading","detail":"High loading on PC1 (0.34)"},
-    {"kind":"changepoint","detail":"3 strong shifts (Mar 5, Mar 18, Apr 02)"},
-    {"kind":"cluster","detail":"Means differ 22% between C0 and C2 (p<0.001)"}
-  ],
-  "links": {                      # jump targets in UI
-    "pca_component": "PC1",
-    "changepoints_for": "Cdrift Min",
-    "cluster_profile": True
-  },
-  "flags": ["collinearity","low_n"] # quality/confidence flags
-}
+### 0.1 Pydantic Models for Type Safety and Validation
+
+All new data structures use Pydantic BaseModel for JSON schema validation and 
+serialization. This ensures type safety and provides automatic OpenAPI documentation.
+
+```python
+# backend/relat_ai/core/autotriage_models.py (new file)
+from pydantic import BaseModel, Field, validator
+from typing import Literal, Optional
+
+class SignalDetail(BaseModel):
+    """Individual signal contributing to suspicion score."""
+    kind: Literal["pca_loading", "changepoint", "cluster", "residual", "dispersion"]
+    weight: float = Field(ge=0.0, le=1.0, description="Normalized contribution")
+    detail: str = Field(min_length=1, description="Human-readable explanation")
+    link: Optional[dict[str, str]] = Field(default=None, description="UI navigation hints")
+
+class SuspicionItemModel(BaseModel):
+    """Enhanced suspicion ranking with contribution breakdown and evidence."""
+    target: str = Field(min_length=1, description="Variable or feature name")
+    score: float = Field(ge=0.0, le=1.0, description="Normalized suspicion score")
+    contrib: dict[str, float] = Field(description="Contribution by signal type (must sum to ~1.0)")
+    top_signals: list[SignalDetail] = Field(max_items=4, description="Top 4 evidence bullets")
+    links: dict[str, str] = Field(default_factory=dict, description="Navigation targets")
+    flags: list[str] = Field(default_factory=list, description="Quality/confidence flags")
+    raw_stats: Optional[dict[str, dict]] = Field(default=None, description="Underlying statistics")
+    
+    @validator('contrib')
+    def contributions_sum_to_one(cls, v):
+        """Ensure contribution weights are normalized."""
+        total = sum(v.values())
+        if not (0.95 <= total <= 1.05):
+            raise ValueError(f"Contributions must sum to ~1.0, got {total:.3f}")
+        return v
+    
+    @validator('top_signals')
+    def signals_sorted_by_weight(cls, v):
+        """Ensure signals are sorted descending by weight."""
+        weights = [s.weight for s in v]
+        if weights != sorted(weights, reverse=True):
+            raise ValueError("Signals must be sorted by weight descending")
+        return v
+
+class ContributionVector(BaseModel):
+    """Normalized signal contributions for transparency."""
+    pca_loading: float = Field(default=0.0, ge=0.0, le=1.0)
+    changepoint_strength: float = Field(default=0.0, ge=0.0, le=1.0)
+    cluster_separation: float = Field(default=0.0, ge=0.0, le=1.0)
+    residual_magnitude: float = Field(default=0.0, ge=0.0, le=1.0)
+    dispersion_anomaly: float = Field(default=0.0, ge=0.0, le=1.0)
+```
+
+**Integration with Existing QualityFlag System**:
+- `SuspicionItemModel.flags` contains string codes (e.g., "collinearity", "low_n") 
+- These map 1:1 to existing `QualityFlag.code` values from `confidence_flags.py`
+- Backend serializer converts `QualityFlag` objects to string codes for transmission
+- Frontend receives codes and renders using existing `render_flags_inline()` component
 
 ## 1.0 Suspicion scoring and explanation wiring
 
