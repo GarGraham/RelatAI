@@ -8,14 +8,22 @@ intent is crystal clear to stakeholders who may not routinely read Python code.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Optional, Sequence
+
+import logging
+import math
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.decomposition import PCA
+from sklearn.metrics import pairwise_distances
 from sklearn.preprocessing import StandardScaler
+from sklearn.tree import DecisionTreeClassifier
+
+from scipy import stats
 
 from relat_ai.services.analysis.utils import apply_sample_limit
 from relat_ai.services.analysis.change_detection import (
@@ -25,6 +33,17 @@ from relat_ai.services.analysis.change_detection import (
 from relat_ai.services.analysis.confidence_flags import (
     QualityFlag,
     build_quality_flags,
+)
+
+from relat_ai.core.autotriage_models import (
+    ChangePointContext,
+    ChangePointReportModel,
+    ClusterFeatureStats,
+    ClusterProfileModel,
+    PCAExplainModel,
+    SegmentSummary,
+    SignalDetail,
+    SuspicionItemModel,
 )
 
 
@@ -77,6 +96,62 @@ class ResidualForensicsInsight:
     buckets: Sequence[ResidualBucket]
 
 
+@dataclass
+class SignalVector:
+    """Normalized signal contributions for a single target."""
+
+    target: str
+    raw_signals: dict[str, float] = field(default_factory=dict)
+    normalized_signals: dict[str, float] = field(default_factory=dict)
+    metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
+    weighted_score: float = 0.0
+
+    def normalize(self, all_signals: dict[str, dict[str, float]]) -> None:
+        """Normalize raw signals to percentile ranks within the batch."""
+
+        for signal_kind in {kind for signals in all_signals.values() for kind in signals}:
+            value = self.raw_signals.get(signal_kind, 0.0)
+            population = np.array([signals.get(signal_kind, 0.0) for signals in all_signals.values()])
+            if population.size == 0 or float(population.max()) == 0:
+                self.normalized_signals[signal_kind] = 0.0
+                continue
+            rank = np.searchsorted(np.sort(population), value, side="right")
+            percentile = rank / population.size
+            self.normalized_signals[signal_kind] = float(percentile)
+
+    def compute_weighted_score(self, weights: dict[str, float]) -> float:
+        active = {kind: value for kind, value in self.normalized_signals.items() if value > 0}
+        if not active:
+            self.weighted_score = 0.0
+            return 0.0
+        weight_subset = {kind: weights.get(kind, 0.0) for kind in active}
+        weight_sum = sum(weight_subset.values())
+        if weight_sum == 0:
+            self.weighted_score = 0.0
+            return 0.0
+        score = sum(active[kind] * (weight_subset[kind] / weight_sum) for kind in active)
+        self.weighted_score = float(score)
+        return self.weighted_score
+
+    def build_bullets(self, top_n: int = 4) -> list[SignalDetail]:
+        sorted_signals = sorted(
+            self.normalized_signals.items(), key=lambda item: item[1], reverse=True
+        )
+        bullets: list[SignalDetail] = []
+        for kind, value in sorted_signals[:top_n]:
+            if value <= 0:
+                continue
+            metadata = self.metadata.get(kind, {})
+            bullets.append(
+                SignalDetail(
+                    kind=kind,
+                    weight=round(float(value), 3),
+                    detail=_format_signal_detail(kind, value, metadata),
+                    link=_build_signal_link(kind, self.target, metadata),
+                )
+            )
+        return bullets
+
 @dataclass(slots=True)
 class SuspicionScore:
     """Ranking record indicating where the engine suggests deeper review."""
@@ -97,6 +172,10 @@ class AutoTriageResult:
     residual_forensics: Sequence[ResidualForensicsInsight]
     suspicion_rankings: Sequence[SuspicionScore]
     quality_flags: Sequence[QualityFlag]
+    pca_explain: Optional[PCAExplainModel] = None
+    cluster_profile: Optional[ClusterProfileModel] = None
+    change_point_reports: Sequence[ChangePointReportModel] = ()
+    suspicion_items: Sequence[SuspicionItemModel] = ()
 
 # ---------------------------------------------------------------------------
 # Migration plan for richer payloads
@@ -135,6 +214,7 @@ class AutoTriageConfig:
     numeric_columns: Sequence[str]
     categorical_columns: Sequence[str] = ()
     datetime_column: str | None = None
+    batch_column: str | None = None
     sample_size_limit: int | None = None
     max_components: int = 3
     kmeans_clusters: int = 3
@@ -147,6 +227,8 @@ class AutoTriageConfig:
     high_missing_threshold: float = 0.2
     high_collinearity_threshold: float = 0.95
     random_state: int = 0
+    min_segment_size: int = 30
+    emit_structured_payloads: bool = True
 
     VALID_CHANGE_POINT_METHODS = frozenset({"cusum", "pelt"})
 
@@ -171,6 +253,8 @@ class AutoTriageConfig:
             raise ValueError("high_missing_threshold must be between 0 and 1")
         if self.high_collinearity_threshold <= 0 or self.high_collinearity_threshold > 1:
             raise ValueError("high_collinearity_threshold must be within (0, 1]")
+        if self.min_segment_size < 1:
+            raise ValueError("min_segment_size must be at least 1")
 
         invalid_methods = [
             method for method in self.change_point_methods if method not in self.VALID_CHANGE_POINT_METHODS
@@ -216,17 +300,36 @@ def run_auto_triage(frame: pd.DataFrame, config: AutoTriageConfig) -> AutoTriage
 
     numeric_data, imputation_flags = _prepare_numeric_matrix(working_frame, config)
 
-    pca_insights, pca_component_strength = _run_pca(numeric_data, config)
-    change_points = _detect_change_points(working_frame, numeric_data, config)
-    cluster_insights = _perform_clustering(numeric_data, config)
+    (
+        pca_insights,
+        pca_component_strength,
+        pca_explain,
+    ) = _run_pca(numeric_data, config)
+
+    (
+        cluster_insights,
+        cluster_labels,
+        cluster_profile,
+    ) = _perform_clustering(numeric_data, working_frame, config)
+
+    change_points, change_point_reports = _detect_change_points(
+        working_frame,
+        numeric_data,
+        config,
+        cluster_labels=cluster_labels,
+        cluster_profile=cluster_profile,
+    )
     residual_insights = _compute_residual_forensics(working_frame, numeric_data, config)
-    suspicion_rankings = _score_suspicion(
+    suspicion_rankings, suspicion_items = _score_suspicion(
         working_frame,
         numeric_data,
         pca_component_strength,
         change_points,
         residual_insights,
         config,
+        cluster_profile=cluster_profile,
+        cluster_labels=cluster_labels,
+        change_point_reports=change_point_reports,
     )
     quality_flags = build_quality_flags(
         working_frame,
@@ -243,6 +346,10 @@ def run_auto_triage(frame: pd.DataFrame, config: AutoTriageConfig) -> AutoTriage
         residual_forensics=residual_insights,
         suspicion_rankings=suspicion_rankings,
         quality_flags=quality_flags,
+        pca_explain=pca_explain if config.emit_structured_payloads else None,
+        cluster_profile=cluster_profile if config.emit_structured_payloads else None,
+        change_point_reports=change_point_reports if config.emit_structured_payloads else (),
+        suspicion_items=suspicion_items if config.emit_structured_payloads else (),
     )
 
 
@@ -260,6 +367,8 @@ def _validate_required_columns(frame: pd.DataFrame, config: AutoTriageConfig) ->
             raise KeyError(f"Missing categorical column: {column}")
     if config.datetime_column and config.datetime_column not in frame.columns:
         raise KeyError(f"Missing datetime column: {config.datetime_column}")
+    if config.batch_column and config.batch_column not in frame.columns:
+        raise KeyError(f"Missing batch column: {config.batch_column}")
 
 
 def _prepare_numeric_matrix(
@@ -297,7 +406,7 @@ def _prepare_numeric_matrix(
 
 def _run_pca(
     numeric_data: pd.DataFrame, config: AutoTriageConfig
-) -> tuple[list[PCAComponentInsight], dict[str, float]]:
+) -> tuple[list[PCAComponentInsight], dict[str, float], Optional[PCAExplainModel]]:
     """Perform PCA and capture component strengths per original variable."""
 
     component_count = min(config.max_components, numeric_data.shape[1])
@@ -306,6 +415,9 @@ def _run_pca(
 
     components: list[PCAComponentInsight] = []
     strength: dict[str, float] = {column: 0.0 for column in numeric_data.columns}
+
+    variance_table: list[dict[str, float]] = []
+    loadings_table: dict[str, list[tuple[str, float]]] = {}
 
     for index, variance_ratio in enumerate(pca_model.explained_variance_ratio_):
         loadings = pd.Series(pca_model.components_[index], index=numeric_data.columns)
@@ -323,8 +435,92 @@ def _run_pca(
                 top_contributors=top,
             )
         )
+        variance_table.append({"pc": f"PC{index + 1}", "ratio": float(variance_ratio)})
+        loadings_table[f"PC{index + 1}"] = [
+            (feature, float(loadings[feature]))
+            for feature in ranked.index[: config.top_component_features]
+        ]
 
-    return components, strength
+    pca_explain: Optional[PCAExplainModel] = None
+    if config.emit_structured_payloads:
+        narratives = _build_pca_narratives(variance_table, loadings_table)
+        cumulative_variance = float(sum(item["ratio"] for item in variance_table))
+        pca_explain = PCAExplainModel(
+            variance=variance_table,
+            loadings=loadings_table,
+            narrative=narratives,
+            cumulative_variance=cumulative_variance,
+        )
+
+    return components, strength, pca_explain
+
+
+# ---------------------------------------------------------------------------
+# PCA narratives
+# ---------------------------------------------------------------------------
+
+
+def _build_pca_narratives(
+    variance_table: list[dict[str, float]],
+    loadings_table: dict[str, list[tuple[str, float]]],
+    *,
+    max_features: int = 3,
+) -> list[str]:
+    """Generate simple natural language narratives for PCA components."""
+
+    narratives: list[str] = []
+    for entry in variance_table:
+        pc_name = entry["pc"]
+        variance_pct = entry["ratio"] * 100
+        contributions = loadings_table.get(pc_name, [])
+        if not contributions:
+            narratives.append(f"{pc_name} explains {variance_pct:.1f}% of variance.")
+            continue
+
+        sorted_contributions = sorted(
+            contributions,
+            key=lambda item: abs(item[1]),
+            reverse=True,
+        )
+        top_contribs = sorted_contributions[:max_features]
+        positive = [name for name, loading in top_contribs if loading > 0]
+        negative = [name for name, loading in top_contribs if loading < 0]
+        contrib_str = ", ".join(
+            f"{name} ({loading:+.2f})" for name, loading in top_contribs
+        )
+        if positive and negative:
+            narrative = (
+                f"{pc_name} ({variance_pct:.1f}%) contrasts "
+                f"{_describe_feature_group(positive)} versus {_describe_feature_group(negative)}"
+                f" with top contributors {contrib_str}."
+            )
+        else:
+            narrative = (
+                f"{pc_name} ({variance_pct:.1f}%) captures {_describe_feature_group([name for name, _ in top_contribs])} "
+                f"variation led by {contrib_str}."
+            )
+        narratives.append(narrative)
+
+    return narratives
+
+
+def _describe_feature_group(feature_names: list[str]) -> str:
+    """Heuristic to describe a set of feature names."""
+
+    if not feature_names:
+        return "mixed"
+    joined = " ".join(feature_names).lower()
+    if any(keyword in joined for keyword in ["time", "duration", "date"]):
+        return "temporal"
+    if any(keyword in joined for keyword in ["mean", "avg", "level"]):
+        return "magnitude"
+    if any(keyword in joined for keyword in ["std", "var", "spread"]):
+        return "variability"
+    if any(keyword in joined for keyword in ["max", "min", "peak"]):
+        return "extremes"
+    if any(keyword in joined for keyword in ["rate", "speed"]):
+        return "rate"
+    return "composite"
 
 
 # ---------------------------------------------------------------------------
@@ -336,10 +532,15 @@ def _detect_change_points(
     frame: pd.DataFrame,
     numeric_data: pd.DataFrame,
     config: AutoTriageConfig,
-) -> list[ChangePointInsight]:
-    """Detect change points for each numeric column using requested methods."""
+    *,
+    cluster_labels: Optional[np.ndarray] = None,
+    cluster_profile: Optional[ClusterProfileModel] = None,
+) -> tuple[list[ChangePointInsight], list[ChangePointReportModel]]:
+    """Detect change points and build enriched reports."""
 
     change_points: list[ChangePointInsight] = []
+    reports: list[ChangePointReportModel] = []
+
     for column in numeric_data.columns:
         series = numeric_data[column]
         for method in config.change_point_methods:
@@ -351,14 +552,29 @@ def _detect_change_points(
                 continue
             if not locations:
                 continue
+            sorted_locations = sorted(int(location) for location in locations)
             change_points.append(
                 ChangePointInsight(
                     column=column,
                     method=method,
-                    locations=[int(location) for location in locations],
+                    locations=sorted_locations,
                 )
             )
-    return change_points
+            if config.emit_structured_payloads:
+                reports.append(
+                    _build_change_point_report(
+                        frame=frame,
+                        series=series,
+                        column=column,
+                        method=method,
+                        locations=sorted_locations,
+                        config=config,
+                        cluster_labels=cluster_labels,
+                        cluster_profile=cluster_profile,
+                    )
+                )
+
+    return change_points, reports
 
 def _apply_clustering_method(
     numeric_data: pd.DataFrame,
@@ -366,8 +582,8 @@ def _apply_clustering_method(
     n_clusters: int,
     sample_size: int,
     random_state: int | None = None,
-) -> ClusterInsight | None:
-    """Apply a clustering method and return insight."""
+) -> tuple[ClusterInsight, np.ndarray] | None:
+    """Apply a clustering method and return the insight plus labels."""
 
     adjusted_clusters = min(n_clusters, sample_size)
     if adjusted_clusters <= 1:
@@ -376,43 +592,62 @@ def _apply_clustering_method(
     if method_name == "kmeans":
         model = KMeans(n_clusters=adjusted_clusters, random_state=random_state, n_init=10)
     elif method_name == "hierarchical":
-        # Agglomerative clustering with ward linkage is deterministic and does not expose random_state.
         model = AgglomerativeClustering(n_clusters=adjusted_clusters)
     else:
         return None
 
     labels = model.fit_predict(numeric_data)
-    return ClusterInsight(method=method_name, cluster_sizes=_count_labels(labels))
+    return ClusterInsight(method=method_name, cluster_sizes=_count_labels(labels)), labels
 
 
 def _perform_clustering(
-    numeric_data: pd.DataFrame, config: AutoTriageConfig
-) -> list[ClusterInsight]:
-    """Run K-Means and hierarchical clustering as requested."""
+    numeric_data: pd.DataFrame,
+    frame: pd.DataFrame,
+    config: AutoTriageConfig,
+) -> tuple[list[ClusterInsight], Optional[np.ndarray], Optional[ClusterProfileModel]]:
+    """Run clustering and optionally compute a descriptive profile."""
 
     results: list[ClusterInsight] = []
     sample_size = len(numeric_data.index)
     if sample_size == 0:
-        return results
+        return results, None, None
 
-    if insight := _apply_clustering_method(
+    kmeans_labels: Optional[np.ndarray] = None
+
+    kmeans_result = _apply_clustering_method(
         numeric_data,
         "kmeans",
         config.kmeans_clusters,
         sample_size,
         config.random_state,
-    ):
+    )
+    if kmeans_result:
+        insight, labels = kmeans_result
         results.append(insight)
+        kmeans_labels = labels
 
-    if insight := _apply_clustering_method(
+    hierarchical_result = _apply_clustering_method(
         numeric_data,
         "hierarchical",
         config.hierarchical_clusters,
         sample_size,
-    ):
+    )
+    if hierarchical_result:
+        insight, _ = hierarchical_result
         results.append(insight)
 
-    return results
+    profile: Optional[ClusterProfileModel] = None
+    if kmeans_labels is not None and config.emit_structured_payloads:
+        profile = compute_cluster_profile(
+            df=frame,
+            features=list(numeric_data.columns),
+            cluster_labels=kmeans_labels,
+            time_col=config.datetime_column,
+            n_medoids=5,
+            max_samples_for_distance=min(len(frame), 5000),
+        )
+
+    return results, kmeans_labels, profile
 
 
 def _count_labels(labels: Iterable[int]) -> dict[int, int]:
@@ -420,6 +655,163 @@ def _count_labels(labels: Iterable[int]) -> dict[int, int]:
     for label in labels:
         counts[int(label)] = counts.get(int(label), 0) + 1
     return counts
+
+
+def compute_cluster_profile(
+    df: pd.DataFrame,
+    features: list[str],
+    cluster_labels: np.ndarray,
+    *,
+    time_col: str | None = None,
+    n_medoids: int = 5,
+    max_samples_for_distance: int = 5000,
+) -> ClusterProfileModel:
+    """Compute descriptive statistics and narratives for clusters."""
+
+    numeric_features = df.loc[:, features].apply(pd.to_numeric, errors="coerce")
+    numeric_features = numeric_features.dropna(axis=1, how="all")
+
+    unique_labels = np.unique(cluster_labels)
+    total = len(cluster_labels)
+    sizes = [
+        {
+            "id": int(label),
+            "n": int(np.sum(cluster_labels == label)),
+            "pct": round(float(np.sum(cluster_labels == label)) / max(total, 1), 4),
+        }
+        for label in unique_labels
+    ]
+
+    top_diff_features: list[dict[str, Any]] = []
+    for feature in numeric_features.columns:
+        groups = [
+            numeric_features.loc[cluster_labels == label, feature].dropna()
+            for label in unique_labels
+        ]
+        if sum(len(group) for group in groups) <= len(unique_labels):
+            continue
+        try:
+            f_stat, p_value = stats.f_oneway(*groups)
+        except ValueError:
+            f_stat, p_value = 0.0, 1.0
+
+        overall = pd.concat(groups) if groups else pd.Series(dtype=float)
+        overall_mean = overall.mean() if not overall.empty else 0.0
+        ss_between = sum(
+            len(group) * (group.mean() - overall_mean) ** 2 for group in groups if len(group) > 0
+        )
+        ss_total = sum(((group - overall_mean) ** 2).sum() for group in groups if len(group) > 0)
+        eta_sq = float(ss_between / ss_total) if ss_total else 0.0
+        entry = {
+            "feature": feature,
+            "f_stat": float(f_stat),
+            "p": float(p_value),
+            "eta_squared": eta_sq,
+            "mean_by_cluster": {
+                str(int(label)): float(groups[idx].mean()) if len(groups[idx]) else math.nan
+                for idx, label in enumerate(unique_labels)
+            },
+        }
+        top_diff_features.append(entry)
+
+    top_diff_features.sort(key=lambda item: (-(item["eta_squared"]), item["p"]))
+    top_diff_features = top_diff_features[:15]
+
+    feature_importance: list[dict[str, float]] = []
+    try:
+        if numeric_features.shape[1] > 0 and len(np.unique(cluster_labels)) > 1:
+            scaler = StandardScaler()
+            scaled = scaler.fit_transform(numeric_features.fillna(numeric_features.mean()))
+            clf = DecisionTreeClassifier(
+                max_depth=4,
+                min_samples_leaf=max(5, len(df) // 100),
+                random_state=42,
+            )
+            clf.fit(scaled, cluster_labels)
+            importances = clf.feature_importances_
+            feature_importance = [
+                {"feature": feature, "importance": float(importance)}
+                for feature, importance in zip(numeric_features.columns, importances)
+                if importance > 0
+            ]
+            feature_importance.sort(key=lambda item: item["importance"], reverse=True)
+            feature_importance = feature_importance[:15]
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logging.warning("Tree-based importance failed: %s", exc)
+
+    medoids: dict[str, list[int]] = {}
+    try:
+        if numeric_features.shape[1] > 0:
+            scaler = StandardScaler()
+            scaled_full = scaler.fit_transform(numeric_features.fillna(numeric_features.mean()))
+            rng = np.random.default_rng(42)
+            for label in unique_labels:
+                indices = np.where(cluster_labels == label)[0]
+                if len(indices) == 0:
+                    continue
+                if len(indices) > max_samples_for_distance:
+                    sampled = rng.choice(indices, size=max_samples_for_distance, replace=False)
+                else:
+                    sampled = indices
+                distances = pairwise_distances(scaled_full[sampled], metric="euclidean")
+                centre_idx = int(np.argmin(distances.sum(axis=1)))
+                distance_to_centre = distances[centre_idx]
+                closest = np.argsort(distance_to_centre)[:n_medoids]
+                medoids[str(int(label))] = [int(sampled[idx]) for idx in closest]
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logging.warning("Medoid computation failed: %s", exc)
+
+    per_feature_stats: dict[str, dict[str, ClusterFeatureStats]] = {}
+    for label in unique_labels:
+        cluster_mask = cluster_labels == label
+        stats_for_cluster: dict[str, ClusterFeatureStats] = {}
+        for feature in numeric_features.columns:
+            values = numeric_features.loc[cluster_mask, feature].dropna()
+            if values.empty:
+                continue
+            q1, q3 = np.percentile(values, [25, 75])
+            stats_for_cluster[feature] = ClusterFeatureStats(
+                mean=float(values.mean()),
+                median=float(values.median()),
+                std=float(values.std(ddof=0)),
+                iqr=float(q3 - q1),
+                n=int(len(values)),
+            )
+        per_feature_stats[str(int(label))] = stats_for_cluster
+
+    by_time: Optional[list[dict[str, Any]]] = None
+    if time_col and time_col in df.columns:
+        try:
+            temporal = df[[time_col]].copy()
+            temporal["cluster"] = cluster_labels
+            temporal[time_col] = pd.to_datetime(temporal[time_col], errors="coerce")
+            temporal = temporal.dropna(subset=[time_col])
+            if not temporal.empty:
+                temporal["window"] = temporal[time_col].dt.to_period("W")
+                counts = temporal.groupby(["window", "cluster"]).size()
+                proportions = counts.groupby(level=0).apply(lambda series: series / series.sum())
+                by_time = [
+                    {
+                        "cluster": int(label),
+                        "window": str(period),
+                        "pct": round(float(proportion), 4),
+                        "n": int(counts.loc[(period, label)]),
+                    }
+                    for (period, label), proportion in proportions.items()
+                ]
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logging.warning("Temporal cluster profiling failed: %s", exc)
+
+    return ClusterProfileModel(
+        method="kmeans",
+        k=int(len(unique_labels)),
+        sizes=sizes,
+        top_diff_features=top_diff_features,
+        feature_importance=feature_importance,
+        medoids=medoids,
+        per_feature_stats=per_feature_stats,
+        by_time=by_time,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -496,55 +888,147 @@ def _score_suspicion(
     change_points: Sequence[ChangePointInsight],
     residuals: Sequence[ResidualForensicsInsight],
     config: AutoTriageConfig,
-) -> list[SuspicionScore]:
-    """Blend PCA, change-point, and residual signals into rankings."""
+    *,
+    cluster_profile: Optional[ClusterProfileModel],
+    cluster_labels: Optional[np.ndarray],
+    change_point_reports: Sequence[ChangePointReportModel],
+) -> tuple[list[SuspicionScore], list[SuspicionItemModel]]:
+    """Blend signals into rankings and structured suspicion items."""
 
-    per_column_change_counts: dict[str, int] = {column: 0 for column in numeric_data.columns}
-    for insight in change_points:
-        per_column_change_counts[insight.column] = per_column_change_counts.get(insight.column, 0) + len(insight.locations)
+    weights = {
+        "pca_loading": 0.35,
+        "changepoint": 0.25,
+        "cluster": 0.2,
+        "residual": 0.1,
+        "dispersion": 0.1,
+    }
 
-    per_column_residual = {column: 0.0 for column in numeric_data.columns}
+    change_summary = defaultdict(list)
+    for report in change_point_reports:
+        change_summary[report.column].append(report)
+
+    residual_summary: dict[str, dict[str, Any]] = defaultdict(lambda: {"max_bucket": 0.0, "bucket_name": None})
     for insight in residuals:
-        for bucket in insight.buckets:
-            for column, value in bucket.column_residuals.items():
-                per_column_residual[column] = per_column_residual.get(column, 0.0) + float(value)
+        if not insight.buckets:
+            continue
+        top_bucket = max(insight.buckets, key=lambda bucket: bucket.average_residual)
+        for column, value in top_bucket.column_residuals.items():
+            meta = residual_summary[column]
+            if value > meta["max_bucket"]:
+                meta["max_bucket"] = float(value)
+                meta["bucket_name"] = top_bucket.label
 
-    suspicion_entries: list[SuspicionScore] = []
+    cluster_lookup = {}
+    if cluster_profile:
+        for feature_entry in cluster_profile.top_diff_features:
+            cluster_lookup[feature_entry["feature"]] = feature_entry
+
+    vectors: dict[str, SignalVector] = {}
     for column in numeric_data.columns:
-        variability = float(pca_strength.get(column, 0.0))
-        change_signal = per_column_change_counts.get(column, 0) / max(len(frame.index), 1)
         series = numeric_data[column]
-        std = series.std(ddof=0) + 1e-6
-        dispersion = float(np.mean(np.abs(series - series.mean())) / std)
-        residual_signal = per_column_residual.get(column, 0.0) / max(len(residuals), 1)
-        score = variability + change_signal + dispersion + residual_signal
-        drivers = []
-        if variability > 0:
-            drivers.append("high PCA loading")
-        if per_column_change_counts.get(column, 0):
-            drivers.append("change points")
-        if dispersion > 1:
-            drivers.append("wide dispersion")
-        if residual_signal > 0:
-            drivers.append("residual spikes")
+        vector = SignalVector(target=column)
+        vector.raw_signals["pca_loading"] = float(pca_strength.get(column, 0.0))
 
-        suspicion_entries.append(
+        # Change-point signal
+        reports = change_summary.get(column, [])
+        if reports:
+            total_changes = sum(report.n for report in reports)
+            vector.raw_signals["changepoint"] = float(total_changes)
+            timestamps = [ctx.timestamp for report in reports for ctx in report.context if ctx.timestamp]
+            vector.metadata["changepoint"] = {
+                "count": total_changes,
+                "timestamps": timestamps[:5],
+            }
+
+        # Cluster signal
+        if cluster_lookup.get(column):
+            feature_entry = cluster_lookup[column]
+            vector.raw_signals["cluster"] = float(feature_entry.get("eta_squared", 0.0))
+            vector.metadata["cluster"] = {
+                "eta_squared": float(feature_entry.get("eta_squared", 0.0)),
+                "p_value": float(feature_entry.get("p", 1.0)),
+            }
+
+        # Residual signal
+        residual_meta = residual_summary.get(column)
+        if residual_meta["max_bucket"] > 0:
+            vector.raw_signals["residual"] = float(residual_meta["max_bucket"])
+            vector.metadata["residual"] = {
+                "max_bucket": residual_meta["max_bucket"],
+                "bucket_name": residual_meta["bucket_name"],
+            }
+
+        # Dispersion (MAD over sigma)
+        mad = float(np.median(np.abs(series - np.median(series))))
+        std = float(series.std(ddof=0)) + 1e-6
+        dispersion = mad / std if std > 0 else 0.0
+        vector.raw_signals["dispersion"] = dispersion
+        vector.metadata["dispersion"] = {"mad_over_sigma": dispersion}
+
+        # Additional change point metadata when none exist
+        if "changepoint" not in vector.metadata and reports:
+            vector.metadata["changepoint"] = {"count": len(reports)}
+
+        vectors[column] = vector
+
+    all_signals = {target: vec.raw_signals for target, vec in vectors.items()}
+    for vector in vectors.values():
+        vector.normalize(all_signals)
+        vector.compute_weighted_score(weights)
+
+    suspicion_scores: list[SuspicionScore] = []
+    suspicion_items: list[SuspicionItemModel] = []
+
+    for column, vector in vectors.items():
+        bullets = vector.build_bullets()
+        contrib_active = {k: v for k, v in vector.normalized_signals.items() if v > 0}
+        total_active = sum(contrib_active.values()) or 1.0
+        contrib = {k: v / total_active for k, v in contrib_active.items()}
+        flags = _build_quality_flags_for_column(
+            frame[column], numeric_data[column], vector
+        )
+        suspicion_scores.append(
             SuspicionScore(
                 target=column,
                 target_type="variable",
-                score=float(score),
-                drivers=tuple(drivers),
+                score=vector.weighted_score,
+                drivers=tuple(b.detail for b in bullets) or ("no signal",),
             )
         )
+        try:
+            suspicion_items.append(
+                SuspicionItemModel(
+                    target=column,
+                    score=round(vector.weighted_score, 4),
+                    contrib=contrib or {"pca_loading": 0.0},
+                    top_signals=bullets,
+                    links={
+                        key: value
+                        for key, value in {
+                            "pca_component": vector.metadata.get("pca_loading", {}).get("component"),
+                            "changepoint_tab": column if vector.raw_signals.get("changepoint") else None,
+                            "cluster_profile": column if vector.raw_signals.get("cluster") else None,
+                        }.items()
+                        if value is not None
+                    },
+                    flags=flags,
+                    raw_stats={k: v for k, v in vector.metadata.items()},
+                )
+            )
+        except ValueError as exc:
+            logging.warning("Suspicion item validation failed for %s: %s", column, exc)
 
-    suspicion_entries.sort(key=_suspicion_score_key, reverse=True)
-    suspicion_entries = suspicion_entries[: config.suspicion_top_k]
+    suspicion_scores.sort(key=_suspicion_score_key, reverse=True)
+    suspicion_items.sort(key=lambda item: item.score, reverse=True)
+
+    suspicion_scores = suspicion_scores[: config.suspicion_top_k]
+    suspicion_items = suspicion_items[: config.suspicion_top_k]
 
     if config.datetime_column:
         time_scores = _score_time_windows(frame, change_points, config)
-        suspicion_entries.extend(time_scores)
+        suspicion_scores.extend(time_scores)
 
-    return suspicion_entries
+    return suspicion_scores, suspicion_items
 
 
 def _score_time_windows(
@@ -580,11 +1064,155 @@ def _score_time_windows(
     return scored[: config.suspicion_top_k]
 
 
+def _format_signal_detail(kind: str, value: float, metadata: dict[str, Any]) -> str:
+    if kind == "pca_loading":
+        component = metadata.get("component", "PC1")
+        loading = metadata.get("loading", value)
+        return f"{component} loading {loading:.3f}"
+    if kind == "changepoint":
+        count = metadata.get("count", 0)
+        timestamps = metadata.get("timestamps", [])
+        ts_fragment = f" ({', '.join(timestamps[:3])})" if timestamps else ""
+        plural = "s" if count != 1 else ""
+        return f"{count} change point{plural}{ts_fragment}"
+    if kind == "cluster":
+        eta_sq = metadata.get("eta_squared", 0.0)
+        p_value = metadata.get("p_value", 1.0)
+        return f"Cluster separation η²={eta_sq:.2f} (p={p_value:.2e})"
+    if kind == "residual":
+        max_bucket = metadata.get("max_bucket", 0.0)
+        bucket_name = metadata.get("bucket_name")
+        suffix = f" in {bucket_name}" if bucket_name else ""
+        return f"Residual spike {max_bucket:.2f}{suffix}"
+    if kind == "dispersion":
+        return f"High dispersion (MAD/σ={metadata.get('mad_over_sigma', value):.2f})"
+    return f"{kind}: {value:.2f}"
+
+
+def _build_signal_link(kind: str, target: str, metadata: dict[str, Any]) -> Optional[dict[str, Any]]:
+    if kind == "pca_loading":
+        component = metadata.get("component")
+        if component:
+            return {"tab": "pca", "component": component}
+    if kind == "changepoint":
+        return {"tab": "changepoints", "column": target}
+    if kind == "cluster":
+        return {"tab": "clusters", "feature": target}
+    if kind == "residual":
+        return {"tab": "residuals", "target": target}
+    return None
+
+
+def _build_change_point_report(
+    *,
+    frame: pd.DataFrame,
+    series: pd.Series,
+    column: str,
+    method: str,
+    locations: Sequence[int],
+    config: AutoTriageConfig,
+    cluster_labels: Optional[np.ndarray],
+    cluster_profile: Optional[ClusterProfileModel],
+) -> ChangePointReportModel:
+    """Construct a structured change-point report."""
+
+    total_len = len(series)
+    boundaries = [0, *locations, total_len]
+    segments: list[SegmentSummary] = []
+    flags: set[str] = set()
+
+    for start, end in zip(boundaries[:-1], boundaries[1:]):
+        # The segment includes rows [start, end), translate to inclusive indices for reporting
+        segment_slice = series.iloc[start:end]
+        if segment_slice.empty:
+            continue
+        end_inclusive = end - 1
+        summary = SegmentSummary(
+            start=int(start),
+            end=int(max(end_inclusive, start)),
+            mean=float(segment_slice.mean()),
+            std=float(segment_slice.std(ddof=0)),
+            n=int(len(segment_slice)),
+            pct=round(len(segment_slice) / max(total_len, 1), 4),
+        )
+        if summary.n < config.min_segment_size:
+            flags.add("insufficient_data")
+        segments.append(summary)
+
+    if len(locations) > 0 and len(locations) > max(1, total_len // max(config.min_segment_size, 1)):
+        flags.add("over_segmented")
+
+    strengths: list[float] = []
+    contexts: list[ChangePointContext] = []
+    dt_series = None
+    if config.datetime_column and config.datetime_column in frame.columns:
+        dt_series = frame.loc[series.index, config.datetime_column]
+        dt_series = pd.to_datetime(dt_series, errors="coerce")
+
+    batch_series = None
+    if config.batch_column and config.batch_column in frame.columns:
+        batch_series = frame.loc[series.index, config.batch_column]
+
+    for idx, location in enumerate(locations):
+        prev_boundary = boundaries[idx]
+        next_boundary = boundaries[idx + 1]
+        before = series.iloc[prev_boundary:location]
+        after = series.iloc[location:next_boundary]
+        if len(before) > 0 and len(after) > 0:
+            strengths.append(float(abs(before.mean() - after.mean())))
+        else:
+            strengths.append(0.0)
+
+        timestamp = None
+        if dt_series is not None and 0 <= location < len(dt_series):
+            ts_value = dt_series.iloc[location]
+            if not pd.isna(ts_value):
+                timestamp = pd.Timestamp(ts_value).isoformat()
+
+        cluster_shift = None
+        if cluster_labels is not None and len(cluster_labels) == total_len:
+            before_labels = cluster_labels[prev_boundary:location]
+            after_labels = cluster_labels[location:next_boundary]
+            if before_labels.size > 0 and after_labels.size > 0:
+                before_mode = int(np.bincount(before_labels).argmax())
+                after_mode = int(np.bincount(after_labels).argmax())
+                if before_mode != after_mode:
+                    cluster_shift = {"before": before_mode, "after": after_mode}
+
+        batch_info = None
+        if batch_series is not None and 0 <= location < len(batch_series):
+            batch_value = batch_series.iloc[location]
+            if not pd.isna(batch_value):
+                batch_info = str(batch_value)
+
+        contexts.append(
+            ChangePointContext(
+                index=int(location),
+                timestamp=timestamp,
+                cluster_shift=cluster_shift,
+                batch_info=batch_info,
+            )
+        )
+
+    return ChangePointReportModel(
+        column=column,
+        method=method,
+        n=len(locations),
+        indices=list(locations),
+        segments=segments,
+        strength=strengths,
+        context=contexts,
+        flags=sorted(flags),
+    )
+
+
 __all__ = [
     "AutoTriageConfig",
     "AutoTriageResult",
     "ChangePointInsight",
     "ClusterInsight",
+    "SignalVector",
+    "compute_cluster_profile",
     "PCAComponentInsight",
     "QualityFlag",
     "ResidualBucket",
