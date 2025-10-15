@@ -25,6 +25,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 from scipy import stats
 
+from relat_ai.config import get_auto_triage_weights
 from relat_ai.services.analysis.utils import apply_sample_limit
 from relat_ai.services.analysis.change_detection import (
     detect_cusum_change_points,
@@ -900,13 +901,7 @@ def _score_suspicion(
     if imputation_flags is None:
         imputation_flags = {}
 
-    weights = {
-        "pca_loading": 0.35,
-        "changepoint": 0.25,
-        "cluster": 0.2,
-        "residual": 0.1,
-        "dispersion": 0.1,
-    }
+    weights = get_auto_triage_weights()
 
     change_summary = defaultdict(list)
     for report in change_point_reports:
@@ -939,10 +934,8 @@ def _score_suspicion(
         if reports:
             total_changes = sum(report.n for report in reports)
             vector.raw_signals["changepoint"] = float(total_changes)
-            timestamps = [ctx.timestamp for report in reports for ctx in report.context if ctx.timestamp]
             vector.metadata["changepoint"] = {
                 "count": total_changes,
-                "timestamps": timestamps[:5],
             }
 
         # Cluster signal
@@ -1081,10 +1074,8 @@ def _format_signal_detail(kind: str, value: float, metadata: dict[str, Any]) -> 
         return f"{component} loading {loading:.3f}"
     if kind == "changepoint":
         count = metadata.get("count", 0)
-        timestamps = metadata.get("timestamps", [])
-        ts_fragment = f" ({', '.join(timestamps[:3])})" if timestamps else ""
         plural = "s" if count != 1 else ""
-        return f"{count} change point{plural}{ts_fragment}"
+        return f"{count} change point{plural}"
     if kind == "cluster":
         eta_sq = metadata.get("eta_squared", 0.0)
         p_value = metadata.get("p_value", 1.0)

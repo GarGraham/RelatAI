@@ -20,6 +20,7 @@ from utils.session_state import (
     get_analysis_results,
     set_analysis_running
 )
+from utils.telemetry import capture_web_vitals
 from components.confidence_flags import (
     render_flag_summary,
     render_flag_filter,
@@ -162,7 +163,10 @@ def execute_analysis(dataset_id: str, mode: str, config: dict):
         
         # Store results
         set_analysis_results(result)
-        
+
+        # Capture web vitals for analytics
+        capture_web_vitals("analysis_complete", dataset_id=dataset_id)
+
         progress_bar.progress(100)
         status_text.text("✅ Analysis complete!")
         

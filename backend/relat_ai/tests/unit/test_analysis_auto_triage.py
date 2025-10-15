@@ -71,6 +71,10 @@ def test_auto_triage_pipeline_produces_expected_sections() -> None:
 
     assert result.quality_flags is not None
 
+    if result.suspicion_items:
+        for item in result.suspicion_items:
+            assert "timestamps" not in (item.raw_stats or {}), "PII timestamps should be removed"
+
 
 def test_auto_triage_rejects_empty_dataset() -> None:
     frame = pd.DataFrame(columns=["timestamp", "metric_a", "metric_b", "metric_c"])

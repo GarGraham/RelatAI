@@ -1,0 +1,9 @@
+# Visualization presets allowing runtime tuning without redeploying the backend.
+auto_triage:
+  suspicion_weights:
+    pca_loading: 0.35
+    changepoint: 0.25
+    cluster: 0.2
+    residual: 0.1
+    dispersion: 0.1
+  suspicion_top_k: 5

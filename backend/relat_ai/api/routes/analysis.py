@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
+from pydantic import ValidationError
 
 from relat_ai.core.results import AnalysisResultResponse, AnalysisRunRequest
 from relat_ai.services.analysis_runner import (
@@ -31,4 +32,10 @@ async def analyze_dataset(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except (AnalysisExecutionError, KeyError, ValueError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    except ValidationError as exc:
+        detail = {
+            "detail": exc.errors(),
+            "message": "Request validation failed",
+        }
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from exc
 

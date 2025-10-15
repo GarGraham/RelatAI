@@ -26,6 +26,7 @@ class AppConfig:
     # Performance Settings
     preview_row_limit: int
     chart_render_timeout: int  # seconds
+    analytics_log_path: str
     
     # Feature Flags
     enable_ai_summary: bool
@@ -67,6 +68,7 @@ def load_config() -> AppConfig:
         # Performance settings
         preview_row_limit=int(os.getenv("PREVIEW_ROW_LIMIT", "50")),
         chart_render_timeout=int(os.getenv("CHART_RENDER_TIMEOUT", "10")),
+        analytics_log_path=os.getenv("ANALYTICS_LOG_PATH", "logs/web_vitals.log"),
         
         # Feature flags
         enable_ai_summary=os.getenv("ENABLE_AI_SUMMARY", "false").lower() == "true",
