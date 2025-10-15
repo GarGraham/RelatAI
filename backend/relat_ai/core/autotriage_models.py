@@ -122,8 +122,8 @@ class ClusterProfileModel(BaseModel):
 class PCAExplainModel(BaseModel):
     """PCA results with narrative explanations and sorted loadings."""
 
-    variance: list[dict[str, float]]
-    loadings: dict[str, list[tuple[str, float]]]
+    variance: list[Dict[str, Any]]  # Contains {"pc": str, "ratio": float}
+    loadings: Dict[str, list[tuple[str, float]]]  # PC name -> [(feature, loading), ...]
     narrative: list[str]
     cumulative_variance: float = Field(ge=0.0, le=1.0)
 

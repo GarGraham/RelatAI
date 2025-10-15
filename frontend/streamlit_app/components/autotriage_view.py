@@ -100,9 +100,8 @@ def render_autotriage_results(result_data: Dict[str, Any]) -> None:
     tab_names = ["🎯 Suspicion Rankings", "📊 PCA Analysis", "📈 Change Points", "🔵 Clusters"]
     tabs = st.tabs(tab_names)
     
-    # Map state.active_tab to tab index
-    tab_map = {"suspicion": 0, "pca": 1, "changepoints": 2, "clusters": 3}
-    active_idx = tab_map.get(state.active_tab, 0)
+    # Note: Tab navigation is handled by state management (autotriage_state.py) and button
+    # callbacks with st.rerun(). Streamlit tabs API doesn't support programmatic activation.
     
     with tabs[0]:  # Suspicion Rankings
         if has_enhanced and 'suspicion_items' in result_data:

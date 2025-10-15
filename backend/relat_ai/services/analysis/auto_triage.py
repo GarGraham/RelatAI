@@ -417,7 +417,7 @@ def _run_pca(
     components: list[PCAComponentInsight] = []
     strength: dict[str, float] = {column: 0.0 for column in numeric_data.columns}
 
-    variance_table: list[dict[str, float]] = []
+    variance_table: list[dict[str, Any]] = []  # Contains {"pc": str, "ratio": float}
     loadings_table: dict[str, list[tuple[str, float]]] = {}
 
     for index, variance_ratio in enumerate(pca_model.explained_variance_ratio_):
@@ -462,7 +462,7 @@ def _run_pca(
 
 
 def _build_pca_narratives(
-    variance_table: list[dict[str, float]],
+    variance_table: list[dict[str, Any]],
     loadings_table: dict[str, list[tuple[str, float]]],
     *,
     max_features: int = 3,
@@ -718,7 +718,7 @@ def compute_cluster_profile(
     top_diff_features.sort(key=lambda item: (-(item["eta_squared"]), item["p"]))
     top_diff_features = top_diff_features[:15]
 
-    feature_importance: list[dict[str, float]] = []
+    feature_importance: list[dict[str, Any]] = []  # Contains {"feature": str, "importance": float}
     try:
         if numeric_features.shape[1] > 0 and len(np.unique(cluster_labels)) > 1:
             scaler = StandardScaler()
