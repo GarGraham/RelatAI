@@ -802,6 +802,9 @@ def render_change_points_enhanced(reports: List[Dict[str, Any]]) -> None:
     if segments:
         st.markdown("### Segment Summaries")
         
+        total_segment_n = sum(s.get('n', 0) for s in segments)
+        total_segment_n = total_segment_n if total_segment_n > 0 else 1
+
         segment_data = []
         for idx, seg in enumerate(segments):
             start = seg.get('start', 0)
@@ -820,7 +823,7 @@ def render_change_points_enhanced(reports: List[Dict[str, Any]]) -> None:
                 'Mean': f"{mean:.3f}",
                 'Std Dev': f"{std:.3f}",
                 'N': n,
-                'Pct': f"{(n / sum(s.get('n', 1) for s in segments)) * 100:.1f}%"
+                'Pct': f"{(n / total_segment_n) * 100:.1f}%"
             })
         
         df_segments = pd.DataFrame(segment_data)
@@ -1025,11 +1028,16 @@ def render_clusters_enhanced(cluster_profile: Optional[Dict[str, Any]]) -> None:
             if 'id' in df_sizes.columns:
                 df_sizes['Cluster'] = df_sizes['id'].astype(str)
             
+            if 'pct' in df_sizes.columns:
+                pct_text = df_sizes['pct'].apply(lambda x: f"{x * 100:.1f}%")
+            else:
+                pct_text = None
+
             fig_bar = go.Figure(data=[
                 go.Bar(
                     x=df_sizes.get('Cluster', df_sizes.get('id')),
                     y=df_sizes.get('n', []),
-                    text=df_sizes.get('pct', []).apply(lambda x: f"{x*100:.1f}%") if 'pct' in df_sizes.columns else None,
+                    text=pct_text,
                     textposition='auto',
                     marker_color='#1f77b4',
                     hovertemplate='Cluster %{x}<br>Size: %{y}<extra></extra>'
@@ -1077,7 +1085,17 @@ def render_clusters_enhanced(cluster_profile: Optional[Dict[str, Any]]) -> None:
         start_idx = (page - 1) * items_per_page
         end_idx = min(start_idx + items_per_page, total_clusters)
         
-        cluster_ids = sorted(medoids.keys(), key=lambda x: int(x))
+        def _cluster_sort_key(cluster_id: Any) -> tuple:
+            """Best-effort sorting that handles numeric and string cluster IDs."""
+            if isinstance(cluster_id, (int, float)):
+                return (0, cluster_id)
+
+            try:
+                return (0, int(cluster_id))
+            except (TypeError, ValueError):
+                return (1, str(cluster_id))
+
+        cluster_ids = sorted(medoids.keys(), key=_cluster_sort_key)
         page_clusters = cluster_ids[start_idx:end_idx]
         
         medoid_data = []
