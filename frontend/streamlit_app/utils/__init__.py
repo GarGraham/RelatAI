@@ -40,6 +40,7 @@ from utils.navigation import (
     get_shareable_link,
     render_share_button,
 )
+from utils.telemetry import capture_web_vitals
 
 __all__ = [
     # API client
@@ -84,4 +85,5 @@ __all__ = [
     "clear_query_params",
     "get_shareable_link",
     "render_share_button",
+    "capture_web_vitals",
 ]

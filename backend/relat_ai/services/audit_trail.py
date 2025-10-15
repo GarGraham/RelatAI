@@ -168,6 +168,28 @@ def record_preprocessing_action(
     )
 
 
+def record_guardrail_override(
+    dataset_id: str,
+    *,
+    guardrail: str,
+    original_value: int | float,
+    enforced_value: int | float,
+) -> AuditAction:
+    """Record an analysis guardrail override in the audit trail."""
+
+    details = {
+        "guardrail": guardrail,
+        "original_value": original_value,
+        "enforced_value": enforced_value,
+    }
+    return record_preprocessing_action(
+        dataset_id,
+        action_type="analysis_guardrail_override",
+        details=details,
+        column=None,
+    )
+
+
 def get_audit_log(dataset_id: str) -> AuditLog | None:
     """Return the audit log associated with a dataset."""
 

@@ -119,10 +119,17 @@ class ClusterProfileModel(BaseModel):
     )
 
 
+class ComponentVariance(BaseModel):
+    """Variance explained by an individual principal component."""
+
+    pc: str
+    ratio: float
+
+
 class PCAExplainModel(BaseModel):
     """PCA results with narrative explanations and sorted loadings."""
 
-    variance: list[dict[str, float]]
+    variance: list[ComponentVariance]
     loadings: dict[str, list[tuple[str, float]]]
     narrative: list[str]
     cumulative_variance: float = Field(ge=0.0, le=1.0)

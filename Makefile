@@ -1,4 +1,4 @@
-.PHONY: install install-dev format lint test type-check run-backend
+.PHONY: install install-dev format lint test type-check run-backend autotriage-e2e
 
 ifeq ($(OS),Windows_NT)
 PYTHON ?= python
@@ -27,6 +27,9 @@ ruff format $(BACKEND_DIR)/relat_ai
 
 test:
 pytest $(BACKEND_DIR)/relat_ai/tests
+
+autotriage-e2e:
+pytest -m autotriage_e2e
 
 type-check:
 mypy $(BACKEND_DIR)/relat_ai

@@ -8,6 +8,12 @@ from typing import Mapping, Sequence
 
 import pandas as pd
 
+from pydantic import ValidationError
+
+from relat_ai.config import (
+    get_auto_triage_suspicion_top_k,
+)
+from relat_ai.core.config import get_settings
 from relat_ai.core.models import DatasetConfiguration
 from relat_ai.core.results import (
     AnalysisParameterOverrides,
@@ -22,12 +28,13 @@ from relat_ai.services.analysis import (
     build_multivariate_models,
     run_auto_triage,
 )
-from relat_ai.services.audit_trail import get_audit_log
+from relat_ai.services.audit_trail import get_audit_log, record_guardrail_override
 from relat_ai.services.configuration import (
     ConfigurationValidator,
     apply_configuration_to_frame,
     get_configuration,
     initialise_configuration,
+    normalise_configuration,
 )
 from relat_ai.services.ingestion import DatasetRecord, get_registry, load_frame
 from relat_ai.services.results import (
@@ -37,6 +44,7 @@ from relat_ai.services.results import (
     create_serialized_result,
 )
 from relat_ai.services.summarization import SummarizationService
+from relat_ai.utils.data_validation import DataValidationError, validate_serialized_result
 
 
 class DatasetNotFoundError(LookupError):
@@ -84,6 +92,13 @@ def execute_analysis(
     if payload.mode is not None:
         configuration.analysis_mode = payload.mode
 
+    try:
+        configuration = normalise_configuration(dataset_id, configuration, record.profile)
+    except ValidationError as exc:
+        raise AnalysisExecutionError(_format_validation_error(exc)) from exc
+    except ValueError as exc:
+        raise AnalysisExecutionError(str(exc)) from exc
+
     frame = load_frame(record.metadata.path)
     filtered = apply_configuration_to_frame(frame, configuration)
     if filtered.empty:
@@ -117,6 +132,11 @@ def execute_analysis(
         parameters=parameters_payload,
         record=record,
     )
+
+    try:
+        validate_serialized_result(serialized)
+    except DataValidationError as exc:
+        raise AnalysisExecutionError(str(exc)) from exc
 
     storage.store(cache_key, serialized)
     return AnalysisResultResponse(
@@ -350,11 +370,15 @@ def _run_auto_triage(
             "Auto-triage analysis requires at least one numeric column."
         )
 
+    settings = get_settings()
     auto_config = AutoTriageConfig(
         numeric_columns=numeric,
         categorical_columns=categorical,
         datetime_column=datetime_column,
+        suspicion_top_k=get_auto_triage_suspicion_top_k(),
+        emit_structured_payloads=settings.auto_triage_explainability,
     )
+    _apply_auto_triage_guardrails(dataset_id, auto_config)
     result = run_auto_triage(filtered, auto_config)
 
     return create_serialized_result(
@@ -396,4 +420,45 @@ __all__ = [
     "execute_analysis",
     "get_result_storage",
 ]
+
+
+def _apply_auto_triage_guardrails(dataset_id: str, config: AutoTriageConfig) -> None:
+    """Enforce upper bounds on clustering and PCA settings."""
+
+    overrides: list[tuple[str, int, int]] = []
+    max_clusters = 12
+    max_components = 8
+
+    if config.kmeans_clusters > max_clusters:
+        overrides.append(("kmeans_clusters", config.kmeans_clusters, max_clusters))
+        config.kmeans_clusters = max_clusters
+    if config.hierarchical_clusters > max_clusters:
+        overrides.append(("hierarchical_clusters", config.hierarchical_clusters, max_clusters))
+        config.hierarchical_clusters = max_clusters
+    if config.max_components > max_components:
+        overrides.append(("max_components", config.max_components, max_components))
+        config.max_components = max_components
+
+    for field, original, enforced in overrides:
+        record_guardrail_override(
+            dataset_id,
+            guardrail=field,
+            original_value=original,
+            enforced_value=enforced,
+        )
+
+
+def _format_validation_error(error: ValidationError) -> str:
+    """Return a concise, actionable error message from a validation error."""
+
+    segments = []
+    for entry in error.errors():
+        location = " -> ".join(str(part) for part in entry.get("loc", ()) if part is not None)
+        message = entry.get("msg", "Invalid value")
+        if location:
+            segments.append(f"{location}: {message}")
+        else:
+            segments.append(message)
+    formatted = "; ".join(segments)
+    return f"Configuration validation failed: {formatted}" if formatted else str(error)
 

@@ -23,6 +23,9 @@ addopts = "-ra"
 testpaths = [
   "backend/relat_ai/tests",
 ]
+markers = [
+  "autotriage_e2e: end-to-end contract validation for auto-triage payloads",
+]
 
 [tool.coverage.run]
 branch = true

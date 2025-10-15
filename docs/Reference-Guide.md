@@ -25,6 +25,7 @@
 - `docs/AuditTrail_UserGuide.md`: User-facing documentation for audit trail interpretation, API usage, action types reference, use cases, and troubleshooting.
 - `docs/Preprocessing_DeveloperGuide.md`: Developer guide for extending preprocessing system, architecture overview, adding new strategies/transformations, testing patterns, and best practices.
 - `docs/FutureEnhancements.md`: Backlog of stretch goals and nice-to-have features including advanced imputation, audit persistence, user tracking, feature engineering, and ML integrations.
+- `docs/performance/auto_triage_benchmarks.md`: Baseline benchmark metrics for auto-triage routines captured via `pytest --benchmark-only`.
 - `docs/Reference-Guide.md`: This reference document mapping repository files to their purpose.
 - `docs/REPO_REVIEW.md`: Comprehensive repository review identifying bugs, refactoring opportunities, and capability assessment against intended use-case.
 - `docs/TechnicalSpecification.md`: Architectural design (v2.1), statistical methods (including PLS, change-point detection, residual forensics), and performance constraints with explicit runtime targets.
@@ -46,6 +47,8 @@
 - `backend/relat_ai/api/routes/audit.py`: REST endpoints exposing preprocessing audit logs for datasets.
 - `backend/relat_ai/core/__init__.py`: Re-exports configuration primitives.
 - `backend/relat_ai/core/config.py`: Pydantic settings model sourcing environment configuration (upload size, profiling sample size, storage paths) with ContextVar-based dependency injection support.
+- `backend/relat_ai/config/settings.py`: Visualization preset loader with YAML-backed weights/top-k thresholds for auto-triage visualisations.
+- `backend/relat_ai/config/__init__.py`: Re-exports visualization preset helpers for convenient imports.
 - `backend/relat_ai/core/exceptions.py`: Custom exception hierarchy for domain-specific errors including persistence failures and registry errors.
 - `backend/relat_ai/core/models.py`: Shared domain models for dataset metadata, profiling payloads, and analysis requests.
 - `backend/relat_ai/core/results.py`: Pydantic schemas describing serialized analysis results, quality flags, ranked insights, and AI summaries.
@@ -62,6 +65,7 @@
 - `backend/relat_ai/services/analysis/evidence_builder.py`: Narrative composition service aggregating structured outputs (suspicion items, PCA explanations, change-point reports, cluster profiles) into unified EvidenceBundle payloads for frontend consumption.
 - `backend/relat_ai/services/analysis/change_detection.py`: Shared change-point detection algorithms (CUSUM and PELT) exposed for reuse across analysis pipelines with configurable thresholds.
 - `backend/relat_ai/services/analysis/confidence_flags.py`: Centralised quality flag dataclass and builder utilities producing consistent dataset warnings across analysis modes.
+- `backend/relat_ai/utils/data_validation.py`: Serialized result validation utilities leveraging Great Expectations when available to prevent NaN/Inf propagation.
 - `backend/relat_ai/services/configuration.py`: In-memory configuration store with validation, filter application helpers, and defaults derived from dataset profiles.
 - `backend/relat_ai/services/templates.py`: Thread-safe storage for reusable configuration templates referencing dataset configurations.
 - `backend/relat_ai/services/analysis/utils.py`: Shared enums and data structures for correlation/model summaries consumed by visualization and summarization layers.
@@ -83,6 +87,9 @@
 - `backend/relat_ai/tests/unit/test_autotriage_explainability.py`: Unit tests for auto-triage explainability features including SignalVector normalization, cluster profile computation (ANOVA validation, medoid selection), change-point segmentation, and evidence bundle round-trip serialization.
 - `backend/relat_ai/tests/unit/test_analysis_multivariate.py`: Verifies regression plan expansion, interaction controls, regression/ANOVA/PLS outputs, effect sizes, and diagnostic calculations.
 - `backend/relat_ai/tests/unit/test_analysis_auto_triage.py`: Unit tests for auto-triage pipeline validating PCA components, change-point detection (CUSUM, PELT), clustering, residual forensics, and suspicion rankings.
+- `backend/relat_ai/tests/unit/test_signal_vector_properties.py`: Hypothesis-based property tests validating signal normalization and weighted scoring bounds.
+- `backend/relat_ai/tests/unit/test_autotriage_guardrails.py`: Ensures guardrail enforcement caps PCA components and cluster counts while logging overrides.
+- `backend/relat_ai/tests/unit/test_data_validation.py`: Verifies serialized result validation rejects NaN and infinite payload values.
 - `backend/relat_ai/tests/unit/test_configuration.py`: Unit tests for configuration and template services covering defaults, validation, and filter application.
 - `backend/relat_ai/tests/unit/test_analysis_change_detection.py`: Unit tests verifying the extracted CUSUM and PELT change-point detection helpers handle shifts and edge cases.
 - `backend/relat_ai/tests/integration/test_datasets_api.py`: Integration coverage for dataset upload and retrieval endpoints.
@@ -90,6 +97,7 @@
 - `backend/relat_ai/tests/integration/test_configuration_api.py`: Integration tests verifying configuration endpoints, previews, template persistence, and validation errors.
 - `backend/relat_ai/tests/integration/__init__.py`: Integration test namespace marker.
 - `backend/scripts/benchmark.py`: CLI utility to benchmark correlation throughput on datasets.
+- `backend/scripts/add_feature_flags.py`: Script that backfills feature flag defaults (e.g. `AUTO_TRIAGE_EXPLAINABILITY`) into existing `.env` files.
 
 ## Frontend (`frontend/`)
 - `frontend/streamlit_app/README.md`: Frontend-specific setup steps, configuration guide, usage instructions, and troubleshooting for the Streamlit application.
@@ -121,9 +129,13 @@
 - `frontend/streamlit_app/utils/validators.py`: Comprehensive validation utilities providing ValidationResult class with boolean conversion support, validate_file_upload() checking extensions and size limits, validate_dataset_columns() verifying minimum column counts and existence, validate_filters() checking filter structure and types, validate_analysis_mode() with mode-specific requirements (correlation requires 2+ columns, multivariate requires anchors and validates max_variables bounds 1-20, auto-triage recommends 3+ colum...
 - `frontend/streamlit_app/utils/autotriage_state.py`: Auto-triage state management providing AutoTriageState dataclass for centralized navigation and drill-down context across suspicion, PCA, change-points, and clusters tabs, with get_autotriage_state() initialization, set_active_autotriage_tab() navigation helper, get_navigation_from_link() backend link parser, render_navigation_breadcrumb() UI component, and deep-linking support for cross-tab context preservation.
 - `frontend/streamlit_app/utils/navigation.py`: Centralized navigation routing with navigate() for payload interpretation, URL query parameter support (get_query_params, set_query_params), sync_state_from_url() for deep-link restoration, get_shareable_link() for URL generation, and render_share_button() component for clipboard copying, enabling shareable views and persistent navigation state.
+- `frontend/streamlit_app/utils/telemetry.py`: Captures Core Web Vitals metrics via `st.experimental_user_info` and persists them to the configured analytics log for performance monitoring.
 - `frontend/streamlit_app/assets/styles.css`: Custom CSS styling with Professional Blue color scheme defining typography, button styles, metrics display, alert cards, sidebar aesthetics, table enhancements, badge classes for confidence flags, and responsive design breakpoints.
 - `frontend/streamlit_app/assets/autotriage.css`: Responsive design CSS for auto-triage components implementing DataUnderstanding_v2.md Section 2.6 specification with three breakpoint levels (desktop >1200px with side-by-side panels, tablet 768-1200px with stacked layout, mobile <768px with single column and simplified legends), card styling with severity-based border colors, grid layouts, chart responsive behavior, navigation breadcrumbs, evidence bullets, segment tables, quality flag badges, navigation buttons, metrics display, accordion sections, pagination controls, utility classes, and dark mode support.
 - `frontend/webapp/README.md`: Placeholder documentation for the future React/Dash implementation.
+- `frontend/tests/cypress.config.js`: Cypress + Percy configuration for frontend regression packs and visual diffs.
+- `frontend/tests/cypress/e2e/navigation.cy.js`: Smoke test validating primary navigation and capturing Percy snapshots at responsive breakpoints.
+- `frontend/tests/cypress/support/e2e.js`: Global Cypress support hooks enabling Percy integration and soft-failing console errors.
 
 ## Data Assets (`datasets/`)
 - `datasets/README.md`: Guidance for sample datasets, uploads, and storage conventions.
@@ -133,8 +145,11 @@
 - `infrastructure/docker/backend.Dockerfile`: Container image definition for the FastAPI backend service.
 - `infrastructure/docker/frontend.Dockerfile`: Container image definition for the Streamlit prototype frontend.
 - `infrastructure/docker-compose.yml`: Compose file orchestrating backend and frontend containers with shared volumes.
+- `infrastructure/config/visualization.yml`: YAML presets controlling auto-triage visualization weights and ranking thresholds.
 - `infrastructure/ci/workflows/ci.yml`: GitHub Actions workflow running lint, format check, type check, and tests on pushes and PRs.
 
 ## Testing Harnesses (`tests/`)
 - `tests/performance/README.md`: Placeholder for benchmarking scenarios measuring performance characteristics.
+- `backend/relat_ai/tests/performance/test_auto_triage_benchmarks.py`: Pytest-benchmark suite capturing micro-benchmark baselines for auto-triage normalization, clustering, change-point detection, and end-to-end runtime.
 - `tests/end_to_end/README.md`: Placeholder for end-to-end workflow tests spanning ingestion through summarization.
+- `tests/end_to_end/test_autotriage_playwright.py`: Playwright-backed smoke test verifying the auto-triage JSON contract exposed to the frontend.
