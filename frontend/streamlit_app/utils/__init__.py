@@ -22,6 +22,24 @@ from utils.session_state import (
     set_state,
     update_configuration,
 )
+from utils.autotriage_state import (
+    AutoTriageState,
+    TabName,
+    get_autotriage_state,
+    set_active_autotriage_tab,
+    clear_autotriage_selections,
+    get_navigation_from_link,
+    render_navigation_breadcrumb,
+)
+from utils.navigation import (
+    navigate,
+    get_query_params,
+    set_query_params,
+    sync_state_from_url,
+    clear_query_params,
+    get_shareable_link,
+    render_share_button,
+)
 
 __all__ = [
     # API client
@@ -50,4 +68,20 @@ __all__ = [
     "get_analysis_results",
     "set_analysis_results",
     "set_analysis_running",
+    # Auto-triage state management
+    "AutoTriageState",
+    "TabName",
+    "get_autotriage_state",
+    "set_active_autotriage_tab",
+    "clear_autotriage_selections",
+    "get_navigation_from_link",
+    "render_navigation_breadcrumb",
+    # Navigation and deep-linking
+    "navigate",
+    "get_query_params",
+    "set_query_params",
+    "sync_state_from_url",
+    "clear_query_params",
+    "get_shareable_link",
+    "render_share_button",
 ]

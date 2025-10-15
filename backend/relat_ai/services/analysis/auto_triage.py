@@ -330,6 +330,7 @@ def run_auto_triage(frame: pd.DataFrame, config: AutoTriageConfig) -> AutoTriage
         cluster_profile=cluster_profile,
         cluster_labels=cluster_labels,
         change_point_reports=change_point_reports,
+        imputation_flags=imputation_flags,
     )
     quality_flags = build_quality_flags(
         working_frame,
@@ -892,8 +893,12 @@ def _score_suspicion(
     cluster_profile: Optional[ClusterProfileModel],
     cluster_labels: Optional[np.ndarray],
     change_point_reports: Sequence[ChangePointReportModel],
+    imputation_flags: Optional[dict[str, float]] = None,
 ) -> tuple[list[SuspicionScore], list[SuspicionItemModel]]:
     """Blend signals into rankings and structured suspicion items."""
+    
+    if imputation_flags is None:
+        imputation_flags = {}
 
     weights = {
         "pca_loading": 0.35,
@@ -984,9 +989,14 @@ def _score_suspicion(
         contrib_active = {k: v for k, v in vector.normalized_signals.items() if v > 0}
         total_active = sum(contrib_active.values()) or 1.0
         contrib = {k: v / total_active for k, v in contrib_active.items()}
-        flags = _build_quality_flags_for_column(
-            frame[column], numeric_data[column], vector
-        )
+        
+        # Build quality flags for this column
+        flags: list[str] = []
+        if column in imputation_flags and imputation_flags[column] > config.high_missing_threshold:
+            flags.append("high_missing")
+        if vector.raw_signals.get("dispersion", 0.0) > 0.8:
+            flags.append("high_dispersion")
+        
         suspicion_scores.append(
             SuspicionScore(
                 target=column,
