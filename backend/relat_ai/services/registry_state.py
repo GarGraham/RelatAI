@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,12 +116,35 @@ def save_registry_state(
         for entry in entries
     ]
 
+    # Atomic write pattern: write to temp file in same directory, then rename.
+    # This prevents corruption if the process crashes or disk fills mid-write.
+    temp_fd = None
+    temp_path = None
     try:
-        path.write_text(json.dumps(serialised), encoding="utf-8")
+        temp_fd, temp_path = tempfile.mkstemp(
+            suffix=".tmp", dir=path.parent, text=True
+        )
+        with os.fdopen(temp_fd, "w", encoding="utf-8") as temp_file:
+            temp_file.write(json.dumps(serialised))
+        temp_fd = None  # ownership transferred to fdopen context manager
+        os.replace(temp_path, path)
+        temp_path = None  # successful rename; nothing to clean up
     except OSError as exc:
         if logger:
             logger.warning("Unable to persist dataset registry: %s", exc)
         return False
+    finally:
+        # Clean up temp file if rename failed or was never attempted
+        if temp_fd is not None:
+            try:
+                os.close(temp_fd)
+            except OSError:
+                pass
+        if temp_path is not None:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     return True
 

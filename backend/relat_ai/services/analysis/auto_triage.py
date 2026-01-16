@@ -111,8 +111,14 @@ class SignalVector:
 
         for signal_kind in {kind for signals in all_signals.values() for kind in signals}:
             value = self.raw_signals.get(signal_kind, 0.0)
-            population = np.array([signals.get(signal_kind, 0.0) for signals in all_signals.values()])
+            raw_population = np.array([signals.get(signal_kind, 0.0) for signals in all_signals.values()])
+            # Filter out NaN and Inf values to prevent searchsorted failures
+            population = raw_population[np.isfinite(raw_population)]
             if population.size == 0 or float(population.max()) == 0:
+                self.normalized_signals[signal_kind] = 0.0
+                continue
+            # Handle case where the value itself is non-finite
+            if not np.isfinite(value):
                 self.normalized_signals[signal_kind] = 0.0
                 continue
             rank = np.searchsorted(np.sort(population), value, side="right")
@@ -229,6 +235,7 @@ class AutoTriageConfig:
     random_state: int = 0
     min_segment_size: int = 30
     emit_structured_payloads: bool = True
+    strict_missingness: bool = False  # When True, fail if any column exceeds high_missing_threshold
 
     VALID_CHANGE_POINT_METHODS = frozenset({"cusum", "pelt"})
 
@@ -380,11 +387,26 @@ def _prepare_numeric_matrix(
     The returned DataFrame mirrors the input order.  We also compute a dictionary
     detailing the proportion of missing values for each column, allowing the
     calling code to surface data-quality warnings later.
+
+    When ``config.strict_missingness`` is True, raises ValueError if any column
+    exceeds the configured ``high_missing_threshold``.
     """
 
     numeric = frame.loc[:, config.numeric_columns].apply(pd.to_numeric, errors="coerce")
 
     missing_ratio = numeric.isna().mean().to_dict()
+
+    # Strict missingness check: fail-fast if critical data quality thresholds are exceeded
+    if config.strict_missingness:
+        failures = [
+            col for col, ratio in missing_ratio.items()
+            if ratio > config.high_missing_threshold
+        ]
+        if failures:
+            raise ValueError(
+                f"Data quality failure: columns {failures} exceed "
+                f"{config.high_missing_threshold:.0%} missingness limit in strict mode."
+            )
 
     # Per-column median imputation with fallback to 0 for columns that are entirely NaN
     filled = numeric.apply(lambda col: col.fillna(col.median() if col.notna().any() else 0.0))

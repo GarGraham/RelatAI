@@ -28,3 +28,5 @@ Every 10 entries, or after a major milestone, provide a 3-bullet snapshot:
 
 - [YYYY-MM-DD]: Project initialized. Initialized core agent guidance files and repo structure.
 - 2026-01-15: Updated REPO_PROFILE.md with complete repo context (tech stack, vocabulary, layout, hazards). Updated TRACE-MATRIX.md mapping 40 URS requirements to implementation with 90% verified status. Agent documentation system (agents.md, AGENT_SYSTEM.md) now in place.
+- 2026-01-15: Repaired Markdown formatting in docs/Code_Remediation.md by fixing code-fence boundaries so each implementation snippet renders correctly.
+- 2026-01-15: Implemented Code_Remediation.md fixes. Task 1: SQLite audit persistence (audit_trail.py). Task 2: Atomic registry writes (registry_state.py). Task 3: strict_missingness flag (auto_triage.py). Task 4: Safe signal normalization (auto_triage.py). Task 5: Confirmed already implemented (SignatureBuilder uses sort_keys). Added 26 unit tests. Updated REPO_PROFILE.md Known Hazards.

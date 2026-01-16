@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from relat_ai.services.analysis import AutoTriageConfig, run_auto_triage
+from relat_ai.services.analysis.auto_triage import SignalVector
 
 
 def _build_sample_frame() -> pd.DataFrame:
@@ -89,3 +90,117 @@ def test_auto_triage_config_validates_change_point_methods() -> None:
             numeric_columns=["metric_a"],
             change_point_methods=("cusum", "invalid"),
         )
+
+
+class TestSignalVectorNormalize:
+    """Tests for SignalVector.normalize with edge cases."""
+
+    def test_normalize_with_nan_in_population(self) -> None:
+        """Normalization should filter out NaN values from population."""
+        signal_vec = SignalVector(target="test", raw_signals={"pca_loading": 0.5})
+        all_signals = {
+            "col1": {"pca_loading": 0.2},
+            "col2": {"pca_loading": float("nan")},
+            "col3": {"pca_loading": 0.8},
+        }
+
+        signal_vec.normalize(all_signals)
+
+        # Should normalize against [0.2, 0.8], ignoring NaN
+        assert signal_vec.normalized_signals["pca_loading"] > 0
+        assert signal_vec.normalized_signals["pca_loading"] <= 1.0
+
+    def test_normalize_with_inf_in_population(self) -> None:
+        """Normalization should filter out Inf values from population."""
+        signal_vec = SignalVector(target="test", raw_signals={"cusum_jumps": 3.0})
+        all_signals = {
+            "col1": {"cusum_jumps": 1.0},
+            "col2": {"cusum_jumps": float("inf")},
+            "col3": {"cusum_jumps": 5.0},
+        }
+
+        signal_vec.normalize(all_signals)
+
+        # Should normalize against [1.0, 5.0], ignoring Inf
+        assert signal_vec.normalized_signals["cusum_jumps"] > 0
+        assert signal_vec.normalized_signals["cusum_jumps"] <= 1.0
+
+    def test_normalize_with_nan_value(self) -> None:
+        """Normalization should return 0 if the value itself is NaN."""
+        signal_vec = SignalVector(target="test", raw_signals={"pca_loading": float("nan")})
+        all_signals = {
+            "col1": {"pca_loading": 0.2},
+            "col2": {"pca_loading": 0.5},
+        }
+
+        signal_vec.normalize(all_signals)
+
+        assert signal_vec.normalized_signals["pca_loading"] == 0.0
+
+    def test_normalize_all_nan_population(self) -> None:
+        """Normalization should return 0 if entire population is NaN/Inf."""
+        signal_vec = SignalVector(target="test", raw_signals={"pca_loading": 0.5})
+        all_signals = {
+            "col1": {"pca_loading": float("nan")},
+            "col2": {"pca_loading": float("inf")},
+        }
+
+        signal_vec.normalize(all_signals)
+
+        assert signal_vec.normalized_signals["pca_loading"] == 0.0
+
+
+class TestStrictMissingness:
+    """Tests for strict_missingness config option."""
+
+    def test_strict_missingness_false_allows_high_missing(self) -> None:
+        """With strict_missingness=False, high missing data emits warnings but proceeds."""
+        frame = _build_sample_frame()
+        # Inject extra missing values to exceed threshold
+        frame.loc[0:35, "metric_a"] = np.nan  # ~30% missing
+
+        config = AutoTriageConfig(
+            numeric_columns=["metric_a", "metric_b", "metric_c"],
+            categorical_columns=["instrument", "lot"],
+            datetime_column="timestamp",
+            high_missing_threshold=0.2,
+            strict_missingness=False,
+        )
+
+        # Should complete without raising
+        result = run_auto_triage(frame, config)
+        assert result.pca_components is not None
+
+    def test_strict_missingness_true_raises_on_high_missing(self) -> None:
+        """With strict_missingness=True, high missing data raises ValueError."""
+        frame = _build_sample_frame()
+        # Inject extra missing values to exceed threshold
+        frame.loc[0:35, "metric_a"] = np.nan  # ~30% missing
+
+        config = AutoTriageConfig(
+            numeric_columns=["metric_a", "metric_b", "metric_c"],
+            categorical_columns=["instrument", "lot"],
+            datetime_column="timestamp",
+            high_missing_threshold=0.2,
+            strict_missingness=True,
+        )
+
+        with pytest.raises(ValueError, match="Data quality failure.*metric_a.*strict mode"):
+            run_auto_triage(frame, config)
+
+    def test_strict_missingness_true_passes_below_threshold(self) -> None:
+        """With strict_missingness=True, data below threshold proceeds normally."""
+        frame = _build_sample_frame()
+        # Frame has ~7% missing (15 rows with NaN out of 120) which is below 20%
+
+        config = AutoTriageConfig(
+            numeric_columns=["metric_a", "metric_b", "metric_c"],
+            categorical_columns=["instrument", "lot"],
+            datetime_column="timestamp",
+            high_missing_threshold=0.2,
+            strict_missingness=True,
+        )
+
+        # Should complete without raising
+        result = run_auto_triage(frame, config)
+        assert result.pca_components is not None

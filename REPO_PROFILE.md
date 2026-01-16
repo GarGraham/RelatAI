@@ -79,5 +79,6 @@ List recurring bugs, edge cases, or Known Hazards encountered in this repo.
 - **Index alignment in Auto-Triage:** PCA loadings must align with filtered column indices; mismatch can produce incorrect suspicion rankings.
 - **Configuration anchor validation:** Anchor columns must be subset of selected_columns; validation enforced in `DatasetConfiguration` model.
 - **LLM Summarization is placeholder:** `services/summarization.py` returns stub content; rule-based fallback in frontend.
-- **In-memory stores:** Dataset registry, configuration store, template store, and audit trail are in-memory; no persistence across restarts yet.
+- **In-memory stores (partial):** Dataset registry, configuration store, and template store remain in-memory; audit trail now uses SQLite persistence.
 - **Frontend API client timeout:** Analysis endpoints may timeout on large datasets; extended timeout configured in `api_client.py`.
+- **Auto-Triage missingness:** By default, high-missing columns are imputed (median) without error. Enable `strict_missingness=True` in `AutoTriageConfig` for regulated workflows requiring fail-fast behavior.

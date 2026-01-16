@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     dataset_registry_state_path: Path = Field(
         default=Path("datasets/registry.json"), alias="DATASET_REGISTRY_STATE_PATH"
     )
+    audit_db_path: Path = Field(
+        default=Path("backend/audit.db"), alias="AUDIT_DB_PATH"
+    )
     preprocessing_missing_numeric: str = Field(
         default="median", alias="PREPROCESSING_MISSING_NUMERIC"
     )
